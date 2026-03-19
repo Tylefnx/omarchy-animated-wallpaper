@@ -1,0 +1,214 @@
+#!/bin/bash
+# wallpaper-video — animated wallpaper manager for Omarchy/Hyprland
+# Uses mpvpaper to play a video as wallpaper, with per-monitor support.
+#
+# Commands:
+#   toggle          — start or stop all wallpapers
+#   pick            — pick video: asks which monitor first if multiple detected
+#   start           — start all configured wallpapers
+#   stop            — stop all wallpapers
+#   status          — print JSON for waybar
+
+CONFIG_DIR="$HOME/.config/wallpaper-video"
+MONITORS_DIR="$CONFIG_DIR/monitors"
+WAYBAR_SIGNAL=11
+
+mkdir -p "$CONFIG_DIR" "$MONITORS_DIR"
+
+# --- helpers ---
+
+get_monitors() {
+  hyprctl monitors -j 2>/dev/null | python3 -c "
+import sys, json
+monitors = json.load(sys.stdin)
+for m in monitors:
+    print(m['name'] + '\t' + m['description'])
+"
+}
+
+monitor_names() {
+  get_monitors | cut -f1
+}
+
+is_running() {
+  pgrep -x mpvpaper > /dev/null
+}
+
+is_running_on() {
+  local monitor="$1"
+  pgrep -fa "mpvpaper" | grep -q " $monitor " 2>/dev/null
+}
+
+get_video_for() {
+  local monitor="$1"
+  local path="$MONITORS_DIR/$monitor"
+  if [[ -f "$path" ]]; then
+    cat "$path"
+  fi
+}
+
+signal_waybar() {
+  pkill -RTMIN+$WAYBAR_SIGNAL waybar 2>/dev/null || true
+}
+
+# --- core actions ---
+
+start_monitor() {
+  local monitor="$1"
+  local video
+  video=$(get_video_for "$monitor")
+
+  if [[ -z "$video" || ! -f "$video" ]]; then
+    return 1
+  fi
+
+  # Kill existing instance on this monitor if any
+  pkill -f "mpvpaper $monitor " 2>/dev/null || true
+  sleep 0.2
+
+  mpvpaper -o "no-audio loop" "$monitor" "$video" &
+  disown
+}
+
+start() {
+  local started=0
+  while IFS= read -r monitor; do
+    if start_monitor "$monitor"; then
+      started=$((started + 1))
+    fi
+  done < <(monitor_names)
+
+  if [[ $started -eq 0 ]]; then
+    notify-send "Animated wallpaper" "No videos configured. Right-click to pick one." \
+      --urgency=normal 2>/dev/null || true
+  fi
+}
+
+stop() {
+  pkill -x mpvpaper 2>/dev/null || true
+  sleep 0.3
+}
+
+toggle() {
+  if is_running; then
+    stop
+  else
+    start
+  fi
+  signal_waybar
+}
+
+pick() {
+  local monitors monitor_list monitor video was_running=false
+
+  # Read monitors into array
+  mapfile -t monitors < <(monitor_names)
+
+  if [[ ${#monitors[@]} -eq 0 ]]; then
+    notify-send "Animated wallpaper" "No monitors detected." --urgency=normal 2>/dev/null || true
+    return 1
+  fi
+
+  is_running && was_running=true
+
+  if [[ ${#monitors[@]} -eq 1 ]]; then
+    # Single monitor: skip selection
+    monitor="${monitors[0]}"
+  else
+    # Build list for zenity: "All monitors | monitor1 (desc) | monitor2 (desc)"
+    local zenity_list=("All monitors")
+    while IFS=$'\t' read -r name desc; do
+      zenity_list+=("$name — $desc")
+    done < <(get_monitors)
+
+    local choice
+    choice=$(printf '%s\n' "${zenity_list[@]}" | zenity \
+      --list \
+      --title="Select monitor" \
+      --column="Monitor" \
+      --height=280 \
+      2>/dev/null)
+
+    [[ -z "$choice" ]] && return 0
+
+    if [[ "$choice" == "All monitors" ]]; then
+      monitor="all"
+    else
+      monitor=$(echo "$choice" | cut -d' ' -f1)
+    fi
+  fi
+
+  # Pick video
+  video=$(zenity --file-selection \
+    --title="Select video${monitor:+ for $monitor}" \
+    --file-filter="Videos (mp4, webm, mkv, gif) | *.mp4 *.webm *.mkv *.avi *.mov *.gif *.MP4 *.WEBM *.MKV" \
+    2>/dev/null)
+
+  [[ -z "$video" ]] && return 0
+
+  if [[ "$monitor" == "all" ]]; then
+    while IFS= read -r m; do
+      echo "$video" > "$MONITORS_DIR/$m"
+    done < <(monitor_names)
+  else
+    echo "$video" > "$MONITORS_DIR/$monitor"
+  fi
+
+  # Restart affected instances
+  if $was_running; then
+    if [[ "$monitor" == "all" ]]; then
+      stop
+      start
+    else
+      pkill -f "mpvpaper $monitor " 2>/dev/null || true
+      sleep 0.2
+      start_monitor "$monitor"
+    fi
+  fi
+
+  signal_waybar
+}
+
+status() {
+  local active=0 total=0 tooltips=()
+
+  while IFS=$'\t' read -r name desc; do
+    total=$((total + 1))
+    local video
+    video=$(get_video_for "$name")
+    local vname
+    vname=$(basename "$video" 2>/dev/null)
+
+    if is_running_on "$name"; then
+      active=$((active + 1))
+      tooltips+=("▶ $name: $vname")
+    else
+      if [[ -n "$video" && -f "$video" ]]; then
+        tooltips+=("⏹ $name: $vname")
+      else
+        tooltips+=("✗ $name: no video")
+      fi
+    fi
+  done < <(get_monitors)
+
+  local tooltip
+  tooltip=$(printf '%s\n' "${tooltips[@]}" | sed ':a;N;$!ba;s/\n/\\n/g')
+  tooltip+="\\nLeft-click to toggle · Right-click to configure"
+
+  if [[ $active -gt 0 ]]; then
+    echo "{\"text\": \"󰕧 Wallpaper\", \"tooltip\": \"$tooltip\", \"class\": \"active\"}"
+  else
+    echo "{\"text\": \"󰕧 Wallpaper\", \"tooltip\": \"$tooltip\", \"class\": \"inactive\"}"
+  fi
+}
+
+# --- main ---
+
+case "${1:-}" in
+  toggle) toggle ;;
+  pick)   pick ;;
+  start)  start; signal_waybar ;;
+  stop)   stop;  signal_waybar ;;
+  status) status ;;
+  *) echo "Usage: wallpaper-video {toggle|pick|start|stop|status}" >&2; exit 1 ;;
+esac
