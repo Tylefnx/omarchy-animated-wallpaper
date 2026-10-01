@@ -45,14 +45,13 @@ Panel {
     var a = []
     if (showError) a.push("dismiss")
     if (showChooseCta) a.push("choose")
-    a.push("image")
     a.push("refresh")
     return a
   }
 
   function globalStopIndex(action) { return globalActions.indexOf(action) }
 
-  function monitorActionCount(monitor) { return monitor && monitor.video ? 3 : 1 }
+  function monitorActionCount(monitor) { return monitor && monitor.video ? 4 : 2 }
 
   function globalStopAt(index) { return { kind: "global", action: globalActions[index] || "" } }
   function monitorStopAt(row, action) { return { kind: "monitor", index: row, action: action } }
@@ -76,8 +75,9 @@ Panel {
       if (!monitor) return false
       // Start/Stop needs a file that is actually there; Pick and Clear never
       // do, which is what makes them the recovery path for a broken one.
-      if (stop.action === 1) return monitor.video !== "" && monitor.available !== false
-      return stop.action === 0 || stop.action === 2
+      if (stop.action === 2) return monitor.video !== "" && monitor.available !== false
+      if (stop.action === 3) return monitor.video !== ""
+      return stop.action === 0 || stop.action === 1
     }
     return false
   }
@@ -138,7 +138,7 @@ Panel {
   }
 
   // Keeps the cursor inside what is actually rendered and on something that
-  // can be activated: a monitor can lose its video (three actions become
+  // can be activated: a monitor can lose its assignment (four actions become
   // one, Start switches off) and the global row changes while a message is
   // up. If a command is running and nothing at all is enabled, the position
   // is kept rather than teleporting the cursor.
@@ -272,15 +272,15 @@ Panel {
       if (stop.action === "dismiss") { service.clearError(); return }
       if (stop.action === "refresh") { service.refresh(); return }
       if (stop.action === "choose") service.pickFor("all")
-      else if (stop.action === "image") service.pickImage()
       return
     }
 
     var monitor = service.monitors[stop.index]
     if (!monitor) return
     if (stop.action === 0) service.pickFor(monitor.name)
-    else if (stop.action === 1) service.toggleMonitor(monitor.name, !monitor.running)
-    else if (stop.action === 2) service.clearFor(monitor.name)
+    else if (stop.action === 1) service.pickWallpaper(monitor.name)
+    else if (stop.action === 2) service.toggleMonitor(monitor.name, !monitor.running)
+    else if (stop.action === 3) service.clearFor(monitor.name)
   }
 
   function scrollCursorIntoView() {
@@ -320,9 +320,9 @@ Panel {
     else {
       for (var i = 0; i < service.monitors.length; i++) {
         var m = service.monitors[i]
-        if (m.running) lines.push(m.name + ": " + (m.videoName || "video") + " (playing)")
+        if (m.running) lines.push(m.name + ": " + (m.videoName || "wallpaper") + " (active)")
         else if (m.video) lines.push(m.name + ": " + m.videoName + " (stopped)")
-        else lines.push(m.name + ": no video")
+        else lines.push(m.name + ": no wallpaper")
       }
     }
     if (service.lastError !== "") {
@@ -345,7 +345,7 @@ Panel {
       return service.active + (service.active === 1 ? " monitor · " : " monitors · ") + playing
     }
     if (service.configuredCount > 0) return "Stopped"
-    return "No videos configured"
+    return "No wallpapers configured"
   }
 
   implicitWidth: button.implicitWidth
@@ -554,7 +554,7 @@ Panel {
             id: ctaButton
             visible: root.showChooseCta
             width: parent.width
-            text: "Choose video for a monitor…"
+            text: "Choose a video for every monitor…"
             tooltipText: "Pick one video and assign it to every monitor"
             fontSize: Style.font.caption
             foreground: root.foreground
@@ -568,41 +568,19 @@ Panel {
             onClicked: service.pickFor("all")
           }
 
-          RowLayout {
+          Button {
+            id: refreshButton
             width: parent.width
-            spacing: Style.space(8)
-
-            Button {
-              id: imageButton
-              Layout.fillWidth: true
-              text: "Static image…"
-              tooltipText: "Apply an Omarchy background and stop active video layers"
-              fontSize: Style.font.caption
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              bordered: true
-              enabled: !service.busy
-              opacity: enabled ? 1 : 0.45
-              hasCursor: root.globalHasCursor("image")
-              onHovered: function(isHovered) { if (isHovered) root.hoverGlobal("image") }
-              onHasCursorChanged: if (hasCursor) root.cursorItem = imageButton
-              onClicked: service.pickImage()
-            }
-
-            Button {
-              id: refreshButton
-              Layout.fillWidth: true
-              text: "Refresh"
-              tooltipText: "Re-read the current wallpaper state"
-              fontSize: Style.font.caption
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              bordered: true
-              hasCursor: root.globalHasCursor("refresh")
-              onHovered: function(isHovered) { if (isHovered) root.hoverGlobal("refresh") }
-              onHasCursorChanged: if (hasCursor) root.cursorItem = refreshButton
-              onClicked: service.refresh()
-            }
+            text: "Refresh"
+            tooltipText: "Re-read the current wallpaper state"
+            fontSize: Style.font.caption
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            bordered: true
+            hasCursor: root.globalHasCursor("refresh")
+            onHovered: function(isHovered) { if (isHovered) root.hoverGlobal("refresh") }
+            onHasCursorChanged: if (hasCursor) root.cursorItem = refreshButton
+            onClicked: service.refresh()
           }
 
           PanelSeparator {
@@ -669,8 +647,8 @@ Panel {
     readonly property bool isRunning: monitor ? monitor.running === true : false
     readonly property string label: {
       if (video) return available ? videoName : videoName + " — missing or unreadable"
-      if (description !== "") return "No video · " + description
-      return "No video chosen"
+      if (description !== "") return "No wallpaper · " + description
+      return "No wallpaper chosen"
     }
 
     width: parent ? parent.width : implicitWidth
@@ -730,7 +708,7 @@ Panel {
           visible: row.video !== "" && !row.available
           textFormat: Text.PlainText
           Layout.fillWidth: true
-          text: "Pick a new video for this monitor, or Clear the assignment."
+          text: "Choose a new image or video for this monitor, or Clear the assignment."
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
@@ -755,6 +733,22 @@ Panel {
       }
 
       Button {
+        id: wallpaperButton
+        text: "Image"
+        tooltipText: "Choose a static wallpaper for " + row.name
+        fontSize: Style.font.caption
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        bordered: true
+        enabled: !service.busy
+        opacity: enabled ? 1 : 0.45
+        hasCursor: root.monitorHasCursor(row.rowIndex, 1)
+        onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 1) }
+        onHasCursorChanged: if (hasCursor) root.cursorItem = wallpaperButton
+        onClicked: service.pickWallpaper(row.name)
+      }
+
+      Button {
         id: toggleButton
         visible: row.video !== ""
         text: row.isRunning ? "Stop" : "Start"
@@ -765,8 +759,8 @@ Panel {
         bordered: true
         enabled: !service.busy && row.available
         opacity: enabled ? 1 : 0.45
-        hasCursor: root.monitorHasCursor(row.rowIndex, 1)
-        onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 1) }
+        hasCursor: root.monitorHasCursor(row.rowIndex, 2)
+        onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 2) }
         onHasCursorChanged: if (hasCursor) root.cursorItem = toggleButton
         onClicked: service.toggleMonitor(row.name, !row.isRunning)
       }
@@ -775,15 +769,15 @@ Panel {
         id: clearButton
         visible: row.video !== ""
         text: "Clear"
-        tooltipText: "Remove the assigned video"
+        tooltipText: "Remove the assigned wallpaper"
         fontSize: Style.font.caption
         foreground: root.foreground
         fontFamily: root.fontFamily
         bordered: true
         enabled: !service.busy
         opacity: enabled ? 1 : 0.45
-        hasCursor: root.monitorHasCursor(row.rowIndex, 2)
-        onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 2) }
+        hasCursor: root.monitorHasCursor(row.rowIndex, 3)
+        onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 3) }
         onHasCursorChanged: if (hasCursor) root.cursorItem = clearButton
         onClicked: service.clearFor(row.name)
       }

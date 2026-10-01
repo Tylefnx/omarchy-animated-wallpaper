@@ -92,6 +92,15 @@ Item {
     pickProcess.running = true
   }
 
+  function pickWallpaper(monitor) {
+    if (pickProcess.running) return
+    actionError = ""
+    actionHint = ""
+    actionStatus = "Choose a wallpaper for " + monitor + "…"
+    pickProcess.command = [root.helper, "wallpaper", monitor]
+    pickProcess.running = true
+  }
+
   function clearFor(monitor) {
     act(["clear", monitor], "Clearing " + monitor + "…")
   }
