@@ -22,6 +22,10 @@ Animated video wallpaper for [Omarchy](https://omarchy.org/) using [mpvpaper](ht
 - `mpvpaper` — `yay -S mpvpaper`
 - `zenity` — usually pre-installed on Omarchy
 
+The installer checks for these tools but does not install system packages. If
+`zenity` is missing, it prints a `sudo pacman -S zenity` suggestion for you to
+run yourself.
+
 ## Install
 
 ```bash
@@ -50,7 +54,25 @@ bash uninstall.sh
 ```
 
 Stops the wallpapers, removes the hook, the plugin, the bar entry, and the saved
-config. Leaves no traces.
+per-monitor assignments and process records.
+
+## Permissions and scope
+
+The plugin runs as your desktop user. It does not request elevated permissions
+or run `sudo`; the only privileged command shown is the optional package install
+suggestion above, which you run yourself if needed.
+
+| Area | What it does | Scope |
+|------|--------------|-------|
+| Install | Checks for `mpvpaper`, `zenity`, and Omarchy. `install.sh --local` copies this checkout; regular installation asks Omarchy to add the declared Git repository. | `~/.config/omarchy/plugins/r4venward.wallpaper-video/` |
+| Bar and startup | Uses Omarchy commands to enable/place the plugin and register the selected post-boot hook. | Omarchy-managed plugin/bar entry and `~/.config/omarchy/hooks/post-boot.d/wallpaper-video-start` |
+| Wallpaper state | Saves each monitor's selected video path and the PID/start-time records for players it started. | `${XDG_CONFIG_HOME:-~/.config}/wallpaper-video/monitors/` and `${XDG_CONFIG_HOME:-~/.config}/wallpaper-video/pids/` |
+| Runtime commands | Reads connected monitor names from `hyprctl`; launches `mpvpaper` for the selected local video; opens `zenity` only when you choose Pick; may send a desktop notification if no wallpapers can start. | Current user session and the video paths you select |
+| Stop and cleanup | Stops only a recorded PID that still identifies as `mpvpaper` with the same process start time. Uninstall removes this plugin, its Omarchy hook, and this plugin's wallpaper state. | The plugin's own processes and paths listed above |
+
+The helper does not kill arbitrary `mpvpaper` processes, modify Omarchy theme
+wallpapers, or change unrelated user configuration. Runtime playback uses local
+files; network access occurs only when Omarchy installs or updates the plugin.
 
 ## Usage
 
