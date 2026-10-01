@@ -156,7 +156,11 @@ the plugin.
 - With nothing assigned yet, **Choose video for a monitor…** picks one file and
   assigns it to every monitor
 - A failed command stays visible with a **Dismiss** action instead of
-  disappearing on the next status poll
+  disappearing on the next status poll. The message says what went wrong in
+  plain words and the line under it says how to fix it
+- When an assigned video has gone missing, its row keeps the file name and
+  points at the two controls that still work: **Pick** a new file or
+  **Clear** the assignment
 
 #### Keyboard
 
@@ -170,7 +174,10 @@ the plugin.
 | `r` | Refresh status |
 
 Mouse hover moves the same highlight, so there is only ever one highlighted
-control on screen.
+control on screen. The highlight never sits on a control that would do
+nothing: it skips a disabled Start, skips everything except Dismiss and
+Refresh while a command is running, and Enter on such a control is refused
+rather than silently ignored.
 
 ### Settings
 
