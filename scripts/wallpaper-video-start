@@ -1,0 +1,11 @@
+#!/bin/bash
+# Start configured animated wallpapers after the desktop comes up.
+# Installed as a post-boot hook by install.sh.
+
+HELPER="$HOME/.config/omarchy/plugins/r4venward.wallpaper-video/bin/wallpaper-video"
+[[ -x "$HELPER" ]] || exit 0
+
+# Let the compositor and its layer-shell surfaces settle first.
+sleep 2
+
+"$HELPER" start >/dev/null 2>&1 || true
