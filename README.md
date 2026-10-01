@@ -149,7 +149,9 @@ the plugin.
 ### Panel
 
 - **Toggle switch** in the header turns everything on/off
-- **Refresh** re-reads state at any time, even while a command runs
+- **Change Wallpaper…** opens Omarchy's wallpaper picker and applies the
+  selection globally; **Refresh** re-reads state at any time, even while a
+  command runs
 - Each monitor row shows its assigned image or video (or `No wallpaper`) and
   lets you **Pick** a video, choose an **Image** from Omarchy's visual picker,
   **Start/Stop** that screen alone, or **Clear** its assignment. The Image

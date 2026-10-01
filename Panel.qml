@@ -45,6 +45,7 @@ Panel {
     var a = []
     if (showError) a.push("dismiss")
     if (showChooseCta) a.push("choose")
+    a.push("image")
     a.push("refresh")
     return a
   }
@@ -271,6 +272,7 @@ Panel {
     if (stop.kind === "global") {
       if (stop.action === "dismiss") { service.clearError(); return }
       if (stop.action === "refresh") { service.refresh(); return }
+      if (stop.action === "image") { service.pickImage(); return }
       if (stop.action === "choose") service.pickFor("all")
       return
     }
@@ -568,19 +570,41 @@ Panel {
             onClicked: service.pickFor("all")
           }
 
-          Button {
-            id: refreshButton
+          RowLayout {
             width: parent.width
-            text: "Refresh"
-            tooltipText: "Re-read the current wallpaper state"
-            fontSize: Style.font.caption
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            bordered: true
-            hasCursor: root.globalHasCursor("refresh")
-            onHovered: function(isHovered) { if (isHovered) root.hoverGlobal("refresh") }
-            onHasCursorChanged: if (hasCursor) root.cursorItem = refreshButton
-            onClicked: service.refresh()
+            spacing: Style.space(8)
+
+            Button {
+              id: globalWallpaperButton
+              Layout.fillWidth: true
+              text: "Change Wallpaper…"
+              tooltipText: "Choose a wallpaper with Omarchy and apply it across all monitors"
+              fontSize: Style.font.caption
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              bordered: true
+              enabled: !service.busy
+              opacity: enabled ? 1 : 0.45
+              hasCursor: root.globalHasCursor("image")
+              onHovered: function(isHovered) { if (isHovered) root.hoverGlobal("image") }
+              onHasCursorChanged: if (hasCursor) root.cursorItem = globalWallpaperButton
+              onClicked: service.pickImage()
+            }
+
+            Button {
+              id: refreshButton
+              Layout.fillWidth: true
+              text: "Refresh"
+              tooltipText: "Re-read the current wallpaper state"
+              fontSize: Style.font.caption
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              bordered: true
+              hasCursor: root.globalHasCursor("refresh")
+              onHovered: function(isHovered) { if (isHovered) root.hoverGlobal("refresh") }
+              onHasCursorChanged: if (hasCursor) root.cursorItem = refreshButton
+              onClicked: service.refresh()
+            }
           }
 
           PanelSeparator {
