@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "r4venward.wallpaper-video",
   "name": "Animated Wallpaper",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "author": "r4venward",
   "license": "MIT",
-  "description": "Choose per-monitor static images or videos from the bar, with Omarchy's image picker and auto-pausing playback.",
+  "description": "Choose per-monitor wallpapers with independent Fill, Fit, Stretch, or Center scaling and auto-pausing video playback.",
   "homepage": "https://github.com/Tylefnx/omarchy-animated-wallpaper",
   "kinds": [
     "bar-widget"
@@ -15,7 +15,7 @@
   },
   "barWidget": {
     "displayName": "Animated Wallpaper",
-    "description": "Choose static images or control video wallpapers per monitor.",
+    "description": "Choose per-monitor images, videos, and scaling modes.",
     "category": "Media",
     "allowMultiple": false,
     "defaultSection": "right",

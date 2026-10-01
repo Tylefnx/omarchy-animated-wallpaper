@@ -8,6 +8,7 @@ Animated video wallpaper for [Omarchy](https://omarchy.org/) using [mpvpaper](ht
 
 - Play any video (MP4, WebM, MKV, GIF...) as your desktop wallpaper
 - **Per-monitor support** — assign a different video or static image to each screen
+- **Per-monitor scaling** — choose Fill, Fit, Stretch, or Center independently for each screen
 - Bar icon: left-click toggles everything, right-click opens the panel
 - Panel: per-monitor video/image pick, start/stop/clear, global on/off switch, live status
 - Videos loop automatically with no audio
@@ -125,7 +126,7 @@ suggestion above, which you run yourself if needed.
 |------|--------------|-------|
 | Install | Checks for `mpvpaper`, `zenity`, and Omarchy. `install.sh --local` mirrors this checkout over the plugin folder after confirming the folder is this plugin's own; regular installation asks Omarchy to add the declared Git repository, moving a non-Git copy aside as a backup first. | `~/.config/omarchy/plugins/r4venward.wallpaper-video/` |
 | Bar and startup | Uses Omarchy commands to enable/place the plugin and register the selected post-boot hook. | Omarchy-managed plugin/bar entry and `~/.config/omarchy/hooks/post-boot.d/wallpaper-video-start` |
-| Wallpaper state | Saves each monitor's selected video path, PID/start-time records, the selected image/video mode, and the base image used when videos start. | `${XDG_CONFIG_HOME:-~/.config}/wallpaper-video/` |
+| Wallpaper state | Saves each monitor's selected image/video path, Fill/Fit/Stretch/Center mode, PID/start-time records, and the base image used when videos start. | `${XDG_CONFIG_HOME:-~/.config}/wallpaper-video/` |
 | Runtime commands | Reads monitor names from `hyprctl`; launches `mpvpaper`; opens `zenity` for video selection; opens Omarchy's visual image picker for per-monitor static selection; uses `omarchy-theme-bg-set` only for the global `image` command; the post-boot hook notifies if a saved wallpaper cannot start. | Current user session, selected local media, and `~/.local/state/omarchy/current/background` |
 | Stop and cleanup | Stops only a recorded PID that still identifies as `mpvpaper` with the same process start time. Uninstall removes this plugin and its Omarchy hook; your wallpaper state is kept unless you pass `--purge`. | The plugin's own processes and paths listed above |
 
@@ -156,7 +157,9 @@ the plugin.
   lets you **Pick** a video, choose an **Image** from Omarchy's visual picker,
   **Start/Stop** that screen alone, or **Clear** its assignment. The Image
   action opens the same Omarchy picker but applies the result only to that row's
-  monitor.
+  monitor. Assigned wallpapers also get a **Scaling** selector: Fill crops to
+  cover, Fit preserves the whole image with bars if needed, Stretch fills the
+  screen, and Center uses source pixel size.
 - With nothing assigned yet, **Choose video for a monitor…** picks one file and
   assigns it to every monitor
 - A failed command stays visible with a **Dismiss** action instead of
@@ -202,6 +205,7 @@ The engine script is also usable on its own:
 | `wallpaper-video stop [monitor]` | Stop wallpapers (only ones it started) |
 | `wallpaper-video toggle` | Toggle everything |
 | `wallpaper-video set <monitor\|all> <file>` | Assign a video |
+| `wallpaper-video layout <monitor> <fill\|fit\|stretch\|center>` | Set a monitor's wallpaper scaling mode |
 | `wallpaper-video clear <monitor\|all>` | Remove an assignment |
 | `wallpaper-video pick [monitor]` | File picker (zenity) |
 | `wallpaper-video wallpaper <monitor>` | Choose a static image from Omarchy's picker for one monitor |
@@ -240,6 +244,8 @@ Omarchy's global wallpaper switcher, while leaving the global background alone.
 The mpvpaper path uses EWA Lanczos for upscaling and Mitchell for downscaling
 when the source and monitor resolutions differ. This improves resampling but
 cannot restore detail missing from the source file.
+Each monitor's Fill, Fit, Stretch, or Center preference (Fill by default) is
+stored separately and applied to both its still image and video wallpaper.
 Choosing a global background through Omarchy still stops plugin layers; choosing
 or starting an image or video in a monitor row enables the per-monitor layers
 again and restores them after login.
