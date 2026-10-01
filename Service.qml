@@ -26,6 +26,10 @@ Item {
   property string statusHint: ""
   property string actionStatus: ""
   property bool refreshing: false
+  property string previewPath: ""
+  property string previewMonitor: ""
+  property string previewLayout: "fill"
+  property string selectionKind: ""
 
   readonly property string lastError: actionError !== "" ? actionError : statusError
   readonly property string lastHint: actionHint !== "" ? actionHint : statusHint
@@ -79,7 +83,8 @@ Item {
     actionError = ""
     actionHint = ""
     actionStatus = "Choose a video for " + monitor + "…"
-    pickProcess.command = [root.helper, "pick", monitor]
+    selectionKind = monitor === "all" ? "" : "video"
+    pickProcess.command = [root.helper, selectionKind ? "select-video" : "pick", monitor]
     pickProcess.running = true
   }
 
@@ -97,8 +102,24 @@ Item {
     actionError = ""
     actionHint = ""
     actionStatus = "Choose a wallpaper for " + monitor + "…"
-    pickProcess.command = [root.helper, "wallpaper", monitor]
+    selectionKind = "image"
+    pickProcess.command = [root.helper, "select-image", monitor]
     pickProcess.running = true
+  }
+
+  function cancelPreview() {
+    previewPath = ""
+    previewMonitor = ""
+  }
+
+  function applyPreview(layout) {
+    if (!previewPath || actionProcess.running) return
+    previewLayout = String(layout || previewLayout)
+    actionStatus = "Applying wallpaper to " + previewMonitor + "…"
+    actionError = ""
+    actionHint = ""
+    actionProcess.command = [root.helper, "apply", previewMonitor, previewPath, previewLayout]
+    actionProcess.running = true
   }
 
   function setLayout(monitor, layout) {
@@ -288,6 +309,8 @@ Item {
         root.actionError = ""
         root.actionHint = ""
         root.actionStatus = String(root.actionStatus || "")
+        if (root.previewPath && actionProcess.command.length > 1 && actionProcess.command[1] === "apply")
+          root.cancelPreview()
       }
       actionStatusTimer.restart()
       settleTimer.ticks = 0
@@ -311,7 +334,18 @@ Item {
         var failure = root.parseFailure(String(pickStderr.text || ""), exitCode, "The file picker could not complete")
         root.actionError = failure.message
         root.actionHint = failure.hint
+      } else if (root.selectionKind !== "" && String(pickStdout.text || "").trim() !== "") {
+        root.previewPath = String(pickStdout.text || "").trim()
+        root.previewMonitor = String(pickProcess.command[pickProcess.command.length - 1] || "")
+        root.previewLayout = "fill"
+        for (var i = 0; i < root.monitors.length; i++) {
+          if (root.monitors[i].name === root.previewMonitor) {
+            root.previewLayout = String(root.monitors[i].layout || "fill")
+            break
+          }
+        }
       }
+      root.selectionKind = ""
       root.actionStatus = ""
       actionStatusTimer.stop()
       settleTimer.ticks = 0

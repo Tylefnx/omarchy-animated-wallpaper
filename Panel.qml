@@ -373,6 +373,10 @@ Panel {
     settings: root.settings
   }
 
+  WallpaperPreview {
+    service: service
+  }
+
   IpcHandler {
     target: root.ipcTarget
     function open(): void { root.open() }
@@ -397,7 +401,8 @@ Panel {
           name: String(m.name || ""),
           video: String(m.video || ""),
           running: m.running === true,
-          available: m.available !== false
+          available: m.available !== false,
+          layout: String(m.layout || "fill")
         })
       }
       return JSON.stringify({
@@ -410,6 +415,11 @@ Panel {
         actionError: service.actionError,
         statusError: service.statusError,
         actionStatus: service.actionStatus,
+        preview: {
+          open: service.previewPath !== "",
+          monitor: service.previewMonitor,
+          layout: service.previewLayout
+        },
         cursor: {
           active: root.cursorActive,
           section: root.focusSection,
@@ -631,7 +641,7 @@ Panel {
             Column {
               id: monitorColumn
               width: parent.width
-              spacing: Style.space(6)
+              spacing: Style.space(8)
 
               Repeater {
                 id: monitorRepeater
@@ -682,16 +692,23 @@ Panel {
     }
 
     width: parent ? parent.width : implicitWidth
-    implicitHeight: rowContent.implicitHeight + Style.spacing.rowPaddingX
+    implicitHeight: rowContent.implicitHeight + Style.space(16)
 
     function openLayout() { layoutDropdown.open() }
 
+    Rectangle {
+      anchors.fill: parent
+      radius: Style.space(3)
+      color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.035)
+      border.width: 1
+      border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08)
+    }
+
     Column {
       id: rowContent
-      anchors.left: parent.left
-      anchors.right: parent.right
-      anchors.verticalCenter: parent.verticalCenter
-      spacing: Style.space(4)
+      anchors.fill: parent
+      anchors.margins: Style.space(8)
+      spacing: Style.space(6)
 
       RowLayout {
         id: rowBody
