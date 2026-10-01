@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "r4venward.wallpaper-video",
+  "name": "Animated Wallpaper",
+  "version": "0.2.0",
+  "author": "r4venward",
+  "license": "MIT",
+  "description": "Play a video as your desktop wallpaper, per monitor, through mpvpaper — with a bar toggle and a panel to pick and control the videos.",
+  "homepage": "https://github.com/Tylefnx/omarchy-animated-wallpaper",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Animated Wallpaper",
+    "description": "Video wallpapers per monitor: toggle from the bar, pick videos in the panel.",
+    "category": "Media",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "barLabel": "Nothing"
+    },
+    "schema": [
+      {
+        "key": "barLabel",
+        "type": "enum",
+        "label": "Show next to the icon",
+        "options": [
+          "Nothing",
+          "Active monitors"
+        ],
+        "defaultValue": "Nothing",
+        "description": "Nothing keeps the bar quiet with just the icon. Active monitors shows how many screens currently have a wallpaper playing, as active/total."
+      }
+    ]
+  }
+}
