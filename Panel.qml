@@ -378,6 +378,41 @@ Panel {
     function stop(): string { service.stopAll(); return "ok" }
     function pick(monitor: string): string { service.pickFor(String(monitor || "all")); return "ok" }
     function image(): string { service.pickImage(); return "ok" }
+    // Read-only introspection so a live session can be checked from the
+    // terminal instead of guessed at: which instance answered, what the
+    // panel would render, and where the shared cursor is. Named snapshot,
+    // not state — Item already owns a `state` property.
+    function snapshot(): string {
+      var rows = []
+      for (var i = 0; i < service.monitors.length; i++) {
+        var m = service.monitors[i]
+        rows.push({
+          name: String(m.name || ""),
+          video: String(m.video || ""),
+          running: m.running === true,
+          available: m.available !== false
+        })
+      }
+      return JSON.stringify({
+        opened: root.opened,
+        busy: service.busy,
+        refreshing: service.refreshing,
+        showError: root.showError,
+        lastError: service.lastError,
+        lastHint: service.lastHint,
+        actionError: service.actionError,
+        statusError: service.statusError,
+        actionStatus: service.actionStatus,
+        cursor: {
+          active: root.cursorActive,
+          section: root.focusSection,
+          index: root.selectedIndex,
+          action: root.actionIndex,
+          enabled: root.stopEnabled(root.cursorStop())
+        },
+        monitors: rows
+      })
+    }
   }
 
   WidgetButton {
