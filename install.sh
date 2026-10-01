@@ -17,7 +17,11 @@ REPO_URL="https://github.com/Tylefnx/omarchy-animated-wallpaper.git"
 HOOK_TYPE="post-boot"
 HOOK_NAME="wallpaper-video-start"
 HOOK_SCRIPT="scripts/$HOOK_NAME"
-HOOK_TARGET="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/hooks/$HOOK_TYPE.d/$HOOK_NAME"
+# Omarchy's hook runner and `omarchy hook install` both hardcode
+# ~/.config/omarchy/hooks — XDG_CONFIG_HOME is never consulted. Deriving this
+# path from XDG would install a hook the runner can never execute, and make
+# the post-install -x check look at a file that was never written.
+HOOK_TARGET="$HOME/.config/omarchy/hooks/$HOOK_TYPE.d/$HOOK_NAME"
 
 OK=$'\e[32m✓\e[0m'
 SKIP=$'\e[33m·\e[0m'

@@ -15,7 +15,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 HOOK_TYPE="post-boot"
 HOOK_NAME="wallpaper-video-start"
-HOOK_TARGET="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/hooks/$HOOK_TYPE.d/$HOOK_NAME"
+# Same path Omarchy's runner reads and `omarchy hook install` writes — never
+# XDG_CONFIG_HOME, which those tools ignore.
+HOOK_TARGET="$HOME/.config/omarchy/hooks/$HOOK_TYPE.d/$HOOK_NAME"
+# A build older than this one derived HOOK_TARGET from XDG_CONFIG_HOME. On a
+# machine where that differs from ~/.config it left a hook the runner never
+# executes; it is ours by name, so plan and remove it alongside the real one.
+HOOK_TARGET_LEGACY=""
+if [[ -n ${XDG_CONFIG_HOME:-} && ${XDG_CONFIG_HOME:-} != "$HOME/.config" ]]; then
+  HOOK_TARGET_LEGACY="$XDG_CONFIG_HOME/omarchy/hooks/$HOOK_TYPE.d/$HOOK_NAME"
+fi
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/wallpaper-video"
 BIN_LINK="$HOME/.local/bin/wallpaper-video"
 PLUGINS_DIR="$HOME/.config/omarchy/plugins"
@@ -95,6 +104,10 @@ done
 
 HOOK_PRESENT=0
 [[ -e $HOOK_TARGET || -L $HOOK_TARGET ]] && HOOK_PRESENT=1
+HOOK_LEGACY_PRESENT=0
+if [[ -n $HOOK_TARGET_LEGACY ]]; then
+  [[ -e $HOOK_TARGET_LEGACY || -L $HOOK_TARGET_LEGACY ]] && HOOK_LEGACY_PRESENT=1
+fi
 PLUGIN_PRESENT=0
 [[ -e $PLUGIN_DIR || -L $PLUGIN_DIR ]] && PLUGIN_PRESENT=1
 CONFIG_PRESENT=0
@@ -115,6 +128,9 @@ if (( HOOK_PRESENT )); then
   echo "    · post-boot hook   $HOOK_TARGET"
 else
   echo "    · post-boot hook   (not present)"
+fi
+if (( HOOK_LEGACY_PRESENT )); then
+  echo "    · stale hook from an older install   $HOOK_TARGET_LEGACY"
 fi
 if (( PLUGIN_PRESENT )); then
   echo "    · plugin + bar entry   $PLUGIN_DIR"
@@ -143,7 +159,7 @@ if (( DRY_RUN )); then
   exit 0
 fi
 
-if (( ! HOOK_PRESENT && ! PLUGIN_PRESENT && ! CONFIG_PRESENT && ! LINK_OURS )); then
+if (( ! HOOK_PRESENT && ! HOOK_LEGACY_PRESENT && ! PLUGIN_PRESENT && ! CONFIG_PRESENT && ! LINK_OURS )); then
   # Nothing of ours exists; still try to stop anything left over from an
   # earlier install so a stray player cannot outlive the plugin.
   if [[ -n $HELPER ]]; then
@@ -192,6 +208,15 @@ if (( HOOK_PRESENT )); then
   fi
 else
   skip "not present"
+fi
+if (( HOOK_LEGACY_PRESENT )); then
+  # Written by an older install.sh that derived the path from
+  # XDG_CONFIG_HOME. Omarchy's runner never reads it, but it is ours.
+  if rm -f -- "$HOOK_TARGET_LEGACY"; then
+    ok "removed the stale hook $HOOK_TARGET_LEGACY"
+  else
+    err "could not remove $HOOK_TARGET_LEGACY" "Remove it by hand: rm -f '$HOOK_TARGET_LEGACY'"
+  fi
 fi
 
 if (( LINK_OURS )); then
