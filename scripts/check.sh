@@ -226,6 +226,99 @@ if [[ -n $TMP_ROOT ]]; then
   expect_fail "missing video file is rejected" "$ENGINE" set all "$TMP_ROOT/nope.mp4"
   expect_fail "unsupported file type is rejected" "$ENGINE" set all "$TMP_ROOT/notes.txt"
 
+  # Static wallpaper selection uses Omarchy's own visual wallpaper picker,
+  # then applies its returned path through Omarchy's background setter. Stub
+  # commands so this stays offline and cannot open a real UI or change desktop state.
+  image_bin="$TMP_ROOT/image-bin"
+  mkdir -p "$image_bin"
+  printf 'image fixture\n' >"$TMP_ROOT/sample.png"
+  cat >"$image_bin/omarchy-theme-bg-switcher" <<'EOF'
+#!/bin/bash
+printf '%s\n' "$IMAGE_SELECTION"
+EOF
+  cat >"$image_bin/omarchy-theme-bg-set" <<'EOF'
+#!/bin/bash
+printf '%s\n' "$1" >"$IMAGE_SET_LOG"
+EOF
+  cat >"$image_bin/hyprctl" <<'EOF'
+#!/bin/bash
+printf '[]\n'
+EOF
+  chmod +x "$image_bin/omarchy-theme-bg-switcher" "$image_bin/omarchy-theme-bg-set" "$image_bin/hyprctl"
+  saved_path="$PATH"
+  export PATH="$image_bin:$PATH"
+  export IMAGE_SELECTION="$TMP_ROOT/sample.png"
+  export IMAGE_SET_LOG="$TMP_ROOT/image-set.log"
+  expect_ok "image picker calls Omarchy's visual wallpaper selector" "$ENGINE" image
+  if [[ -f $IMAGE_SET_LOG && $(<"$IMAGE_SET_LOG") == "$TMP_ROOT/sample.png" &&
+        $(<"$XDG_CONFIG_HOME/wallpaper-video/mode") == image ]]; then
+    ok "Omarchy picker selection is applied and static mode is recorded"
+  else
+    bad "Omarchy picker result was not applied through Omarchy"
+  fi
+  rm -f -- "$IMAGE_SET_LOG"
+  export IMAGE_SELECTION=""
+  expect_ok "cancelling Omarchy's wallpaper picker is harmless" "$ENGINE" image
+  if [[ ! -e $IMAGE_SET_LOG ]]; then
+    ok "cancelling the Omarchy picker changes no background"
+  else
+    bad "cancelling the Omarchy picker unexpectedly applied a background"
+  fi
+  # Per-monitor static selection uses the same Omarchy image-grid component
+  # as the global switcher, but renders the result on one selected output.
+  cat >"$image_bin/omarchy-menu-images" <<'EOF'
+#!/bin/bash
+printf '%s\n' "$*" >"$IMAGE_MENU_LOG"
+printf '%s\n' "$IMAGE_SELECTION"
+EOF
+  cat >"$image_bin/hyprctl" <<'EOF'
+#!/bin/bash
+printf '[{"name":"DP-1","description":"test monitor"}]\n'
+EOF
+  cat >"$image_bin/mpvpaper" <<'EOF'
+#!/usr/bin/env python3
+import ctypes, os, sys, time
+if "--help" in sys.argv:
+    print("--auto-pause --auto-mode")
+    raise SystemExit(0)
+with open(os.environ["MPVPAPER_LOG"], "w", encoding="utf-8") as stream:
+    stream.write(" ".join(sys.argv[1:]))
+ctypes.CDLL(None).prctl(15, b"mpvpaper", 0, 0, 0)
+time.sleep(30)
+EOF
+  chmod +x "$image_bin/omarchy-menu-images" "$image_bin/hyprctl" "$image_bin/mpvpaper"
+  export IMAGE_SELECTION="$TMP_ROOT/sample.png"
+  export IMAGE_MENU_LOG="$TMP_ROOT/image-menu.log"
+  export MPVPAPER_LOG="$TMP_ROOT/mpvpaper.log"
+  expect_ok "per-monitor Image action invokes Omarchy's visual picker" "$ENGINE" wallpaper DP-1
+  if [[ -f "$XDG_CONFIG_HOME/wallpaper-video/monitors/DP-1" &&
+        $(<"$XDG_CONFIG_HOME/wallpaper-video/monitors/DP-1") == "$TMP_ROOT/sample.png" &&
+        $(<"$XDG_CONFIG_HOME/wallpaper-video/mode") == video &&
+        $(<"$IMAGE_MENU_LOG") == *"$HOME/.local/state/omarchy/current/theme/backgrounds"* &&
+        $(<"$MPVPAPER_LOG") == *"image-display-duration=inf"* &&
+        $(<"$MPVPAPER_LOG") == *"DP-1"* && ! -e "$IMAGE_SET_LOG" ]]; then
+    ok "chosen image runs only on DP-1 as a still and leaves the global background alone"
+  else
+    bad "per-monitor image selection did not create the expected still-image assignment"
+  fi
+  if "$ENGINE" status --json | jq -e '.monitors[] | select(.name == "DP-1") | .running == true and .available == true' >/dev/null 2>&1; then
+    ok "per-monitor still wallpaper is reported active"
+  else
+    bad "per-monitor still wallpaper is not reported active"
+  fi
+  export IMAGE_SELECTION=""
+  expect_ok "cancelling a per-monitor wallpaper choice preserves its assignment" "$ENGINE" wallpaper DP-1
+  if [[ $(<"$XDG_CONFIG_HOME/wallpaper-video/monitors/DP-1") == "$TMP_ROOT/sample.png" ]]; then
+    ok "cancel does not replace the monitor wallpaper"
+  else
+    bad "cancel unexpectedly replaced the monitor wallpaper"
+  fi
+  expect_ok "stop a per-monitor still wallpaper" "$ENGINE" stop DP-1
+  expect_ok "clear the per-monitor still wallpaper test assignment" "$ENGINE" clear DP-1
+  rm -f -- "$MPVPAPER_LOG"
+  export PATH="$saved_path"
+  unset IMAGE_SELECTION IMAGE_SET_LOG IMAGE_MENU_LOG MPVPAPER_LOG
+
   # Nothing is assigned yet, so start/toggle must succeed without spawning a
   # single mpvpaper. Run these BEFORE any `set` below: once an assignment
   # exists, `start` would really launch a player.
