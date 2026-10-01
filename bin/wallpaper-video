@@ -17,6 +17,7 @@ Usage: wallpaper-video <command> [args]
   stop [monitor]               Stop wallpapers started by this helper
   toggle                       Toggle all configured wallpapers
   set <monitor|all> <file>     Assign a video file (mp4, webm, mkv, avi, mov, gif)
+  wallpaper <monitor>          Choose a static wallpaper for one monitor
   clear <monitor|all>          Clear an assignment
   pick [monitor]               Choose a video with zenity
   image [file]                 Choose or apply a static Omarchy background
@@ -84,13 +85,13 @@ try:
 except Exception:
     print("could not read wallpaper status"); raise SystemExit(1)
 if not result["monitors"]: print("no monitors detected")
-if result["mode"] == "image": print("static wallpaper active")
-elif result["mode"] == "off": print("wallpaper playback disabled")
+if result["mode"] == "image": print("global static wallpaper active")
+elif result["mode"] == "off": print("wallpaper layers disabled")
 for monitor in result["monitors"]:
     if monitor["running"]: state = "playing"
-    elif monitor["video"] and not monitor["available"]: state = "missing video"
+    elif monitor["video"] and not monitor["available"]: state = "missing wallpaper"
     elif monitor["video"]: state = "stopped"
-    else: state = "no video"
+    else: state = "no wallpaper"
     suffix = f" ({monitor['videoName']})" if monitor["videoName"] else ""
     print(f"{monitor['name']}: {state}{suffix}")
 PY
@@ -134,6 +135,7 @@ case "$command" in
   set) [[ $# -eq 2 ]] || usage; set_video "$1" "$2" ;;
   clear) [[ $# -eq 1 ]] || usage; clear_video "$1" ;;
   pick) [[ $# -le 1 ]] || usage; pick_video "${1:-all}" ;;
+  wallpaper) [[ $# -eq 1 ]] || usage; pick_wallpaper "$1" ;;
   image)
     [[ $# -le 1 ]] || usage
     if [[ $# -eq 1 ]]; then apply_image "$1"; else pick_image; fi

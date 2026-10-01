@@ -23,27 +23,27 @@ ensure_auto_pause_support() {
 # panel) or take the reason and re-attach it to the monitor it belongs to
 # (start_all), so no message may depend on being printed bare.
 start_monitor() {
-  local monitor="$1" assignment video pid started pid_file
+  local monitor="$1" assignment video pid started pid_file mpv_options
   assignment=$(monitor_file "$monitor") || exit 1
   if [[ ! -f "$assignment" || -L "$assignment" ]]; then
-    printf 'wallpaper-video: no video is assigned to this monitor\n' >&2
-    printf 'hint: open the panel and Pick a video, or Clear this monitor\n' >&2
+    printf 'wallpaper-video: no wallpaper is assigned to this monitor\n' >&2
+    printf 'hint: choose Image or Pick a video for this monitor\n' >&2
     return 1
   fi
   video=$(<"$assignment")
   if [[ -z "$video" ]]; then
-    printf 'wallpaper-video: the saved assignment for this monitor is empty\n' >&2
-    printf 'hint: open the panel and Pick a video for this monitor\n' >&2
+    printf 'wallpaper-video: the saved wallpaper assignment is empty\n' >&2
+    printf 'hint: choose Image or Pick a video for this monitor\n' >&2
     return 1
   fi
   if [[ ! -f "$video" || ! -r "$video" ]]; then
-    printf 'wallpaper-video: the assigned video is missing or unreadable: %s\n' "$video" >&2
-    printf 'hint: Pick a new video for this monitor, or Clear the assignment\n' >&2
+    printf 'wallpaper-video: the assigned wallpaper is missing or unreadable: %s\n' "$video" >&2
+    printf 'hint: choose a new image or video for this monitor, or Clear the assignment\n' >&2
     return 1
   fi
-  if ! valid_video "$video"; then
-    printf 'wallpaper-video: the assigned file is not a supported video: %s\n' "$video" >&2
-    printf 'hint: choose an MP4, WebM, MKV, AVI, MOV, or GIF file\n' >&2
+  if ! valid_video "$video" && ! valid_image "$video"; then
+    printf 'wallpaper-video: the assigned file is not a supported image or video: %s\n' "$video" >&2
+    printf 'hint: choose a PNG, JPEG, WebP, AVIF, BMP, MP4, WebM, MKV, AVI, MOV, or GIF file\n' >&2
     return 1
   fi
   command -v mpvpaper >/dev/null 2>&1 || die "mpvpaper is not installed"
@@ -51,7 +51,9 @@ start_monitor() {
   stop_monitor "$monitor"
   mkdir -p -m 700 -- "$PIDS_DIR" || die "cannot create process state directory"
   command -v setsid >/dev/null 2>&1 || die "setsid is not installed"
-  setsid mpvpaper --auto-pause -a MAX -o "no-audio loop" "$monitor" "$video" >/dev/null 2>&1 &
+  mpv_options="no-audio loop"
+  if valid_image "$video"; then mpv_options="no-audio image-display-duration=inf"; fi
+  setsid mpvpaper --auto-pause -a MAX -o "$mpv_options" "$monitor" "$video" >/dev/null 2>&1 &
   pid=$!
   started=""
   for _ in {1..20}; do
@@ -197,6 +199,47 @@ valid_image() {
   case "${1,,}" in *.png|*.jpg|*.jpeg|*.webp|*.avif|*.bmp) return 0 ;; *) return 1 ;; esac
 }
 
+set_wallpaper_image() {
+  local monitor="$1" image="$2" target
+  [[ -n "$monitor" && -n "$image" ]] || usage
+  monitor_exists "$monitor" || die "unknown monitor '$monitor'"
+  valid_image "$image" || die "choose a readable PNG, JPEG, WebP, AVIF, or BMP image"
+  image=$(realpath -e -- "$image") || die "cannot resolve image path"
+  target=$(monitor_file "$monitor") || exit 1
+  mkdir -p -m 700 -- "$MONITORS_DIR" "$PIDS_DIR" || die "cannot create configuration directory"
+  atomic_write "$target" "$image"
+  atomic_write "$MODE_FILE" video
+  capture_background
+  # A newly chosen wallpaper is shown immediately. If a player was already
+  # running, start_monitor safely stops and replaces just this output's process.
+  start_monitor "$monitor"
+}
+
+pick_wallpaper() {
+  local monitor="$1" selected="" theme_name theme_dir user_dir image assignment
+  monitor_exists "$monitor" || die "unknown monitor '$monitor'"
+  command -v omarchy-menu-images >/dev/null 2>&1 ||
+    { printf "%s\n" "wallpaper-video: Omarchy's wallpaper picker is not available" >&2
+      printf '%s\n' "hint: install or update Omarchy so omarchy-menu-images is available" >&2
+      return 1; }
+  assignment=$(monitor_file "$monitor") || exit 1
+  if [[ -f "$assignment" && ! -L "$assignment" ]]; then
+    selected=$(<"$assignment")
+  fi
+  valid_image "$selected" || selected=$(current_background || true)
+  theme_name=$(<"$HOME/.local/state/omarchy/current/theme.name") 2>/dev/null || theme_name=""
+  theme_dir="$HOME/.local/state/omarchy/current/theme/backgrounds"
+  user_dir="$HOME/.config/omarchy/backgrounds/$theme_name"
+  # omarchy-theme-bg-switcher uses this exact Omarchy image-grid picker and
+  # these same theme/user background directories, but always applies globally.
+  # Calling its underlying picker lets this plugin apply the selection to one
+  # output without changing the desktop-wide Omarchy background.
+  image=$(omarchy-menu-images --selected "$selected" "$theme_dir" "$user_dir") ||
+    die "Omarchy's wallpaper picker could not open"
+  [[ -n "$image" ]] || return 0
+  set_wallpaper_image "$monitor" "$image"
+}
+
 apply_image() {
   local image="$1"
   valid_image "$image" || die "choose a readable PNG, JPEG, WebP, AVIF, or BMP image"
@@ -210,9 +253,12 @@ apply_image() {
 
 pick_image() {
   local image
-  command -v zenity >/dev/null 2>&1 || die "zenity is not installed"
-  image=$(zenity --file-selection --title="Choose a static wallpaper" \
-    --file-filter="Images | *.png *.jpg *.jpeg *.webp *.avif *.bmp *.PNG *.JPG *.JPEG *.WEBP *.AVIF *.BMP" 2>/dev/null) || true
+  command -v omarchy-theme-bg-switcher >/dev/null 2>&1 ||
+    die "Omarchy's wallpaper selector (omarchy-theme-bg-switcher) is not available"
+  # This is Omarchy's own visual wallpaper picker (the same one opened from
+  # the desktop background), not the GTK file chooser used for video files.
+  # It prints the selected path, or nothing when the user cancels.
+  image=$(omarchy-theme-bg-switcher) || die "Omarchy's wallpaper selector could not open"
   [[ -n "$image" ]] || return 0
   apply_image "$image"
 }
