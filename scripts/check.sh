@@ -219,6 +219,30 @@ if [[ -n $TMP_ROOT ]]; then
       fi
       expect_ok "clear all is idempotent" "$ENGINE" clear all
       expect_ok "clear all is idempotent (second run)" "$ENGINE" clear all
+
+      # A broken assignment must name the monitor it belongs to, the reason,
+      # and a way out — not an anonymous "failed on: <something>".
+      printf '/nonexistent/clip.mp4\n' >"$XDG_CONFIG_HOME/wallpaper-video/monitors/$monitor"
+      start_out=$("$ENGINE" start 2>&1)
+      start_rc=$?
+      if ((start_rc != 0)) &&
+        grep -q "could not start the wallpaper on $monitor" <<<"$start_out" &&
+        grep -q "  $monitor: the assigned video is missing or unreadable" <<<"$start_out" &&
+        grep -q 'hint: Pick a new video' <<<"$start_out"; then
+        ok "a broken assignment reports the monitor, the reason and the fix"
+      else
+        bad "broken assignment report → rc=$start_rc $(printf '%s' "$start_out" | tr '\n' ' ')"
+      fi
+      rm -f -- "$XDG_CONFIG_HOME/wallpaper-video/monitors/$monitor"
+
+      # An unknown monitor on a direct start must still say so plainly.
+      if start_out=$("$ENGINE" start no-such-monitor 2>&1); then
+        bad "start on an unknown monitor unexpectedly succeeded"
+      elif grep -q "unknown monitor" <<<"$start_out"; then
+        ok "start on an unknown monitor is rejected with a clear reason"
+      else
+        bad "unknown monitor report → $(printf '%s' "$start_out" | tr '\n' ' ')"
+      fi
     fi
   else
     skip "hyprctl/mpvpaper unavailable — skipping assignment round-trip"

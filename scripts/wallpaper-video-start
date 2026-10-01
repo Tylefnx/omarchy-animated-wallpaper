@@ -15,11 +15,16 @@ output=$("$HELPER" start --restore 2>&1)
 status=$?
 
 if ((status != 0)); then
-  message="${output//$'\n'/ }"
-  [[ -n "$message" ]] || message="Wallpaper could not start."
-  printf 'wallpaper-video: %s\n' "$message" >&2
+  # The first line carries the headline — for start_all it already names the
+  # monitors that failed — while the full multi-line report stays on stderr
+  # for the journal. Flattening everything into one notification would turn
+  # a useful reason into an unreadable wall of text.
+  headline=${output%%$'\n'*}
+  headline=${headline#wallpaper-video: }
+  [[ -n "$headline" ]] || headline="Wallpaper could not start."
+  printf 'wallpaper-video: %s\n' "$output" >&2
   command -v notify-send >/dev/null 2>&1 &&
-    notify-send "Animated wallpaper" "$message" --urgency=critical 2>/dev/null || true
+    notify-send "Animated wallpaper" "$headline" --urgency=critical 2>/dev/null || true
 fi
 
 # Always exit 0: omarchy-hook reports "Hook failed: <path>" for any non-zero

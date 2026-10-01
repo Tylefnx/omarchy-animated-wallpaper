@@ -18,20 +18,32 @@ ensure_auto_pause_support() {
   MPVPAPER_AUTO_PAUSE_SUPPORTED=1
 }
 
+# Every failure is a single readable reason on the first stderr line, with an
+# optional `hint:` line after it. Callers either show the message as-is (CLI,
+# panel) or take the reason and re-attach it to the monitor it belongs to
+# (start_all), so no message may depend on being printed bare.
 start_monitor() {
   local monitor="$1" assignment video pid started pid_file
   assignment=$(monitor_file "$monitor") || exit 1
   if [[ ! -f "$assignment" || -L "$assignment" ]]; then
-    printf 'wallpaper-video: no video assigned to %s\n' "$monitor" >&2
+    printf 'wallpaper-video: no video is assigned to this monitor\n' >&2
+    printf 'hint: open the panel and Pick a video, or Clear this monitor\n' >&2
     return 1
   fi
   video=$(<"$assignment")
-  if [[ -z "$video" || ! -f "$video" || ! -r "$video" ]]; then
-    printf 'wallpaper-video: assigned video for %s is missing or unreadable\n' "$monitor" >&2
+  if [[ -z "$video" ]]; then
+    printf 'wallpaper-video: the saved assignment for this monitor is empty\n' >&2
+    printf 'hint: open the panel and Pick a video for this monitor\n' >&2
+    return 1
+  fi
+  if [[ ! -f "$video" || ! -r "$video" ]]; then
+    printf 'wallpaper-video: the assigned video is missing or unreadable: %s\n' "$video" >&2
+    printf 'hint: Pick a new video for this monitor, or Clear the assignment\n' >&2
     return 1
   fi
   if ! valid_video "$video"; then
-    printf 'wallpaper-video: assigned file for %s is not a supported video: %s\n' "$monitor" "$video" >&2
+    printf 'wallpaper-video: the assigned file is not a supported video: %s\n' "$video" >&2
+    printf 'hint: choose an MP4, WebM, MKV, AVI, MOV, or GIF file\n' >&2
     return 1
   fi
   command -v mpvpaper >/dev/null 2>&1 || die "mpvpaper is not installed"
@@ -49,7 +61,8 @@ start_monitor() {
   done
   if [[ -z "$started" ]]; then
     wait "$pid" 2>/dev/null || true
-    printf 'wallpaper-video: mpvpaper failed to start on %s\n' "$monitor" >&2
+    printf 'wallpaper-video: mpvpaper could not start\n' >&2
+    printf 'hint: check the file with: mpvpaper %s %s\n' "$monitor" "$video" >&2
     return 1
   fi
   pid_file=$(pid_path "$monitor") || exit 1
@@ -57,27 +70,49 @@ start_monitor() {
   disown "$pid" 2>/dev/null || true
 }
 
+# Start every assigned monitor. Success stays quiet; a partial failure reports
+# each monitor with its own reason, plus what the other monitors are doing, so
+# one broken file never hides which screens are still fine.
 start_all() {
-  local started=0 monitor assignment
-  local -a failures=() monitors=()
+  local monitor assignment detail line rest joined=""
+  local -a monitors=() failures=() running=() idle=() details=()
   require_monitor_query
   mapfile -t monitors < <(monitor_names)
   for monitor in "${monitors[@]}"; do
     # A monitor without an assignment is not a failure — it is simply idle.
     assignment=$(monitor_file "$monitor") || exit 1
-    [[ -f "$assignment" && ! -L "$assignment" ]] || continue
-    if start_monitor "$monitor"; then started=$((started + 1)); else failures+=("$monitor"); fi
-  done
-  if (( started == 0 )); then
-    # No assignments is a valid idle state. Only assigned-but-broken files
-    # populate failures above and produce a non-zero result.
-    if (( ${#failures[@]} )); then
-      printf 'wallpaper-video: could not start wallpaper on: %s\n' "${failures[*]}" >&2
-      return 1
+    if [[ ! -f "$assignment" || -L "$assignment" ]]; then
+      idle+=("$monitor")
+      continue
     fi
+    if detail=$(start_monitor "$monitor" 2>&1); then
+      running+=("$monitor")
+    else
+      failures+=("$monitor")
+      details+=("$detail")
+    fi
+  done
+  if (( ${#failures[@]} == 0 )); then
+    # No assignments at all is a valid idle state, not an error.
     return 0
   fi
-  (( ${#failures[@]} == 0 )) || { printf 'wallpaper-video: failed on: %s\n' "${failures[*]}" >&2; return 1; }
+  for monitor in "${failures[@]}"; do joined+="${joined:+, }$monitor"; done
+  printf 'wallpaper-video: could not start the wallpaper on %s\n' "$joined" >&2
+  local i rest_lines
+  for i in "${!failures[@]}"; do
+    detail=${details[$i]}
+    line=${detail%%$'\n'*}
+    printf '  %s: %s\n' "${failures[$i]}" "${line#wallpaper-video: }" >&2
+    rest=${detail#*$'\n'}
+    if [[ $rest != "$detail" ]]; then
+      while IFS= read -r rest_lines; do
+        [[ -n $rest_lines ]] && printf '      %s\n' "$rest_lines" >&2
+      done <<<"$rest"
+    fi
+  done
+  (( ${#running[@]} == 0 )) || printf '  running: %s\n' "${running[*]}" >&2
+  (( ${#idle[@]} == 0 )) || printf '  idle (no video): %s\n' "${idle[*]}" >&2
+  return 1
 }
 
 valid_video() {
