@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "r4venward.wallpaper-video",
   "name": "Animated Wallpaper",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "author": "r4venward",
   "license": "MIT",
-  "description": "Apply static Omarchy backgrounds or manage auto-pausing, per-monitor video wallpapers with a bar toggle and control panel.",
+  "description": "Apply static Omarchy backgrounds or run per-monitor video wallpapers that pause while covered, from a bar toggle and a keyboard-navigable control panel.",
   "homepage": "https://github.com/Tylefnx/omarchy-animated-wallpaper",
   "kinds": [
     "bar-widget"
