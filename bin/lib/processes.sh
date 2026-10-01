@@ -52,7 +52,7 @@ terminate_owned_group() {
 
 read_pid() {
   local file
-  file=$(pid_path "$1")
+  file=$(pid_path "$1") || return 1
   [[ -f "$file" && ! -L "$file" ]] || return 1
   cat -- "$file" 2>/dev/null
 }
@@ -71,7 +71,7 @@ any_running() {
 
 stop_monitor() {
   local file pid started
-  file=$(pid_path "$1")
+  file=$(pid_path "$1") || exit 1
   [[ -f "$file" && ! -L "$file" ]] || return 0
   IFS=' ' read -r pid started <"$file" || true
   terminate_owned_group "$pid" "$started"

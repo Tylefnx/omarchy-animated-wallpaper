@@ -16,7 +16,7 @@ Usage: wallpaper-video <command> [args]
   start [monitor]              Start configured wallpapers
   stop [monitor]               Stop wallpapers started by this helper
   toggle                       Toggle all configured wallpapers
-  set <monitor|all> <file>     Assign a readable video
+  set <monitor|all> <file>     Assign a video file (mp4, webm, mkv, avi, mov, gif)
   clear <monitor|all>          Clear an assignment
   pick [monitor]               Choose a video with zenity
   image [file]                 Choose or apply a static Omarchy background
@@ -26,6 +26,7 @@ EOF
 }
 
 status_json() {
+  require_python
   python3 - "$MONITORS_DIR" "$PIDS_DIR" "$(wallpaper_mode)" <<'PY'
 import json, os, subprocess, sys
 
@@ -74,6 +75,7 @@ PY
 }
 
 status_text() {
+  require_python
   python3 - "$SCRIPT_DIR/wallpaper-video" <<'PY'
 import json, subprocess, sys
 script = sys.argv[1]
@@ -114,11 +116,20 @@ case "$command" in
     ;;
   stop)
     [[ $# -le 1 ]] || usage
-    if [[ $# -eq 1 ]]; then stop_monitor "$1"; else stop_all; fi
+    if [[ $# -eq 1 ]]; then
+      monitor_is_known "$1" || die "unknown monitor '$1'"
+      stop_monitor "$1"
+    else stop_all; fi
     ;;
   toggle)
     [[ $# -eq 0 ]] || usage
-    if any_running; then stop_all; else start_all; fi
+    if any_running; then
+      stop_all
+    else
+      atomic_write "$MODE_FILE" video
+      capture_background
+      start_all
+    fi
     ;;
   set) [[ $# -eq 2 ]] || usage; set_video "$1" "$2" ;;
   clear) [[ $# -eq 1 ]] || usage; clear_video "$1" ;;

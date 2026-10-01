@@ -9,18 +9,27 @@ BACKGROUND_FILE="$CONFIG_DIR/background"
 
 die() { printf 'wallpaper-video: %s\n' "$*" >&2; exit 1; }
 
+# The path helpers below print their own diagnostic and return non-zero.
+# They are always called inside $( ), where die() would only exit the
+# subshell and the failure would be swallowed — so every call site must
+# re-raise it with `|| exit 1`.
+require_python() {
+  command -v python3 >/dev/null 2>&1 ||
+    die "python3 is not installed; install it with: sudo pacman -S python"
+}
+
 valid_monitor_name() {
   [[ -n "$1" && "$1" != */* && "$1" != "." && "$1" != ".." && "$1" != *$'\n'* ]]
 }
 
 monitor_file() {
-  valid_monitor_name "$1" || die "invalid monitor name"
+  valid_monitor_name "$1" || die "invalid monitor name: $1"
   [[ ! -L "$MONITORS_DIR" && ( ! -e "$MONITORS_DIR" || -d "$MONITORS_DIR" ) ]] || die "unsafe monitor configuration directory"
   printf '%s/%s' "$MONITORS_DIR" "$1"
 }
 
 pid_path() {
-  valid_monitor_name "$1" || die "invalid monitor name"
+  valid_monitor_name "$1" || die "invalid monitor name: $1"
   [[ ! -L "$PIDS_DIR" && ( ! -e "$PIDS_DIR" || -d "$PIDS_DIR" ) ]] || die "unsafe process state directory"
   printf '%s/%s.pid' "$PIDS_DIR" "$1"
 }
