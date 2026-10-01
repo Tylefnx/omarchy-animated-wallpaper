@@ -211,9 +211,11 @@ symlink it to `~/.local/bin` if you want it on your PATH.
 
 ```bash
 omarchy-shell r4venward.wallpaper-video toggle    # open/close the panel
+omarchy-shell r4venward.wallpaper-video refresh   # re-read monitor state
 omarchy-shell r4venward.wallpaper-video start
 omarchy-shell r4venward.wallpaper-video stop
 omarchy-shell r4venward.wallpaper-video pick DP-1
+omarchy-shell r4venward.wallpaper-video snapshot  # JSON: what the panel would render
 ```
 
 ## How it works
