@@ -127,6 +127,37 @@ else
   skip "qmllint not installed"
 fi
 
+# Panel keyboard/error contracts. Static, offline and cheap: qmllint only
+# proves the files parse, so these pin the behaviours that keep one shared
+# highlight honest and make a failure actionable.
+PANEL="$ROOT/Panel.qml"
+SERVICE="$ROOT/Service.qml"
+
+if grep -q 'function activateCursor()' "$PANEL" \
+  && grep -A4 'function activateCursor()' "$PANEL" | grep -q 'stopEnabled'; then
+  ok "Panel: activating the keyboard cursor re-checks that the control is enabled"
+else
+  bad "Panel: activateCursor no longer refuses a disabled control"
+fi
+
+if grep -q 'onHovered.*setCursor(' "$PANEL"; then
+  bad "Panel: a hover handler sets the cursor without checking whether the control is enabled"
+else
+  ok "Panel: every hover goes through the enabled-stop guard"
+fi
+
+if grep -q 'lastHint' "$SERVICE" && grep -q 'hint:' "$SERVICE"; then
+  ok "Service: failures carry a fix-it hint the panel can render"
+else
+  bad "Service: no lastHint / hint parsing — failures stay bare headlines"
+fi
+
+if grep -q 'service.lastHint' "$PANEL"; then
+  ok "Panel: the error block renders the fix-it hint"
+else
+  bad "Panel: the fix-it hint is computed but never shown"
+fi
+
 # -------------------------------------------------------------- engine
 section "Engine (isolated config, real Omarchy state untouched)"
 TMP_ROOT=$(mktemp -d) || { bad "could not create a temporary directory"; TMP_ROOT=""; }

@@ -19,13 +19,16 @@ Item {
   property string mode: "video"
   // Two separate error channels: a failed action must survive the status
   // refresh that follows it, while a failed refresh is cleared by the next
-  // successful one. lastError is the view the panel renders.
+  // successful one. lastError/lastHint are the views the panel renders.
   property string actionError: ""
+  property string actionHint: ""
   property string statusError: ""
+  property string statusHint: ""
   property string actionStatus: ""
   property bool refreshing: false
 
   readonly property string lastError: actionError !== "" ? actionError : statusError
+  readonly property string lastHint: actionHint !== "" ? actionHint : statusHint
   readonly property bool running: active > 0
   readonly property bool busy: actionProcess.running || pickProcess.running
   readonly property int configuredCount: {
@@ -57,6 +60,7 @@ Item {
     if (actionProcess.running) return
     actionStatus = statusText || ""
     actionError = ""
+    actionHint = ""
     actionProcess.command = [root.helper].concat(args)
     actionProcess.running = true
   }
@@ -73,6 +77,7 @@ Item {
   function pickFor(monitor) {
     if (pickProcess.running) return
     actionError = ""
+    actionHint = ""
     actionStatus = "Choose a video for " + monitor + "…"
     pickProcess.command = [root.helper, "pick", monitor]
     pickProcess.running = true
@@ -81,6 +86,7 @@ Item {
   function pickImage() {
     if (pickProcess.running) return
     actionError = ""
+    actionHint = ""
     actionStatus = "Choose a static wallpaper…"
     pickProcess.command = [root.helper, "image"]
     pickProcess.running = true
@@ -92,14 +98,17 @@ Item {
 
   function clearError() {
     actionError = ""
+    actionHint = ""
     statusError = ""
+    statusHint = ""
   }
 
   function applyStatus(raw) {
     var data = null
     try { data = JSON.parse(raw) } catch (e) { data = null }
     if (!data || !Array.isArray(data.monitors)) {
-      statusError = "wallpaper-video status returned no data"
+      statusError = "Could not read the wallpaper status"
+      statusHint = "Choose Refresh in the panel to try again."
       return
     }
     monitors = data.monitors
@@ -107,11 +116,86 @@ Item {
     total = Number(data.total || 0)
     mode = String(data.mode || "video")
     statusError = ""
+    statusHint = ""
   }
 
   function elideError(text) {
     var value = String(text || "").replace(/\s+/g, " ").trim()
     return value.length > 160 ? value.substring(0, 157) + "…" : value
+  }
+
+  // Failures the engine reports the way a developer would, rewritten the way
+  // a user would read them — each with the step that fixes it. The engine's
+  // own `hint:` line wins whenever it sent one; this is the fallback for the
+  // die() paths that only ever print one line.
+  function friendlyFor(text) {
+    var t = String(text || "").toLowerCase()
+    var rules = [
+      ["unknown monitor",
+        "That monitor is no longer available",
+        "Refresh the panel to see the monitors that are connected now."],
+      ["no video is assigned",
+        "No video is assigned to this monitor",
+        "Pick a video for it, or Clear the assignment."],
+      ["missing or unreadable",
+        "The saved video file is missing or unreadable",
+        "Pick a new video for this monitor, or Clear the assignment."],
+      ["does not exist or is not readable",
+        "The selected file is missing or unreadable",
+        "Pick a different video file."],
+      ["not a supported video",
+        "That file is not a supported video",
+        "Choose an MP4, WebM, MKV, AVI, MOV, or GIF file."],
+      ["choose an mp4",
+        "That file is not a supported video",
+        "Choose an MP4, WebM, MKV, AVI, MOV, or GIF file."],
+      ["mpvpaper is not installed",
+        "mpvpaper is not installed",
+        "Install it with: yay -S mpvpaper"],
+      ["zenity is not installed",
+        "The file picker is not installed (zenity)",
+        "Install it with: sudo pacman -S zenity"],
+      ["python3 is not installed",
+        "python3 is not installed",
+        "Install it with: sudo pacman -S python"],
+      ["mpvpaper could not start",
+        "mpvpaper could not play this file",
+        "Check the file opens in a video player, then Pick it again."],
+      ["mpvpaper failed",
+        "mpvpaper could not play this file",
+        "Check the file opens in a video player, then Pick it again."],
+      ["hyprctl",
+        "Your monitors could not be listed",
+        "Hyprland has to be running before the panel can show your screens."]
+    ]
+    for (var i = 0; i < rules.length; i++)
+      if (t.indexOf(rules[i][0]) !== -1)
+        return { message: rules[i][1], hint: rules[i][2] }
+    return { message: "", hint: "" }
+  }
+
+  // One shape for every failed command: the first stderr line is the
+  // headline, any `hint:` line is the way out, and anything else falls back
+  // to friendlyFor(). The panel shows the message with the hint under it.
+  function parseFailure(raw, exitCode, fallback) {
+    var text = String(raw || "").replace(/\r/g, "").replace(/[ \t]+$/, "")
+    text = text.replace(/^\n+|\n+$/g, "")
+    if (text === "")
+      return { message: elideError(fallback || "wallpaper-video exited with " + exitCode), hint: "" }
+
+    var lines = text.split("\n")
+    var message = lines[0].replace(/^\s*wallpaper-video:\s*/, "").trim()
+    var hint = ""
+    for (var i = 1; i < lines.length; i++) {
+      var match = /^\s*hint:\s*(.+)$/.exec(lines[i])
+      if (match) { hint = match[1].trim(); break }
+    }
+
+    var friendly = friendlyFor(text)
+    if (lines.length === 1 && friendly.message !== "") message = friendly.message
+    if (hint === "" && friendly.hint !== "") hint = friendly.hint
+
+    return { message: elideError(message), hint: elideError(hint) }
   }
 
   Timer {
@@ -156,8 +240,13 @@ Item {
     stderr: StdioCollector { id: statusStderr; waitForEnd: true }
     onExited: function(exitCode) {
       root.refreshing = false
-      if (exitCode === 0) root.applyStatus(String(statusStdout.text || ""))
-      else root.statusError = root.elideError(String(statusStderr.text || "") || "Could not read wallpaper status")
+      if (exitCode === 0) {
+        root.applyStatus(String(statusStdout.text || ""))
+      } else {
+        var failure = root.parseFailure(String(statusStderr.text || ""), exitCode, "Could not read the wallpaper status")
+        root.statusError = failure.message
+        root.statusHint = failure.hint
+      }
     }
   }
 
@@ -177,12 +266,14 @@ Item {
     stdout: StdioCollector { id: actionStdout; waitForEnd: true }
     stderr: StdioCollector { id: actionStderr; waitForEnd: true }
     onExited: function(exitCode) {
-      var stderr = String(actionStderr.text || "").trim()
       if (exitCode !== 0) {
-        root.actionError = root.elideError(stderr || "wallpaper-video exited with " + exitCode)
+        var failure = root.parseFailure(String(actionStderr.text || ""), exitCode, "wallpaper-video exited with " + exitCode)
+        root.actionError = failure.message
+        root.actionHint = failure.hint
         root.actionStatus = ""
       } else {
         root.actionError = ""
+        root.actionHint = ""
         root.actionStatus = String(root.actionStatus || "")
       }
       actionStatusTimer.restart()
@@ -200,9 +291,11 @@ Item {
     stderr: StdioCollector { id: pickStderr; waitForEnd: true }
     onExited: function(exitCode) {
       // zenity exits 1 when the dialog is cancelled — that is not an error.
-      var stderr = String(pickStderr.text || "").trim()
-      if (exitCode !== 0 && exitCode !== 1)
-        root.actionError = root.elideError(stderr || "The file picker could not complete")
+      if (exitCode !== 0 && exitCode !== 1) {
+        var failure = root.parseFailure(String(pickStderr.text || ""), exitCode, "The file picker could not complete")
+        root.actionError = failure.message
+        root.actionHint = failure.hint
+      }
       root.actionStatus = ""
       actionStatusTimer.stop()
       settleTimer.ticks = 0

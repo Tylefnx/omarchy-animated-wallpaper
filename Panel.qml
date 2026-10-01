@@ -54,6 +54,72 @@ Panel {
 
   function monitorActionCount(monitor) { return monitor && monitor.video ? 3 : 1 }
 
+  function globalStopAt(index) { return { kind: "global", action: globalActions[index] || "" } }
+  function monitorStopAt(row, action) { return { kind: "monitor", index: row, action: action } }
+
+  // Whether this stop would actually do something if activated right now.
+  // Navigation skips disabled stops, hover refuses to place the cursor on
+  // one, and activation checks again — so the one shared highlight can never
+  // sit on a control that silently does nothing.
+  function stopEnabled(stop) {
+    if (!stop) return false
+    if (stop.kind === "header") return !service.busy
+    if (stop.kind === "global") {
+      // Dismiss and Refresh stay usable while a command runs: they are how
+      // the user gets out of a wedged panel.
+      if (stop.action === "dismiss" || stop.action === "refresh") return true
+      return !service.busy
+    }
+    if (stop.kind === "monitor") {
+      if (service.busy) return false
+      var monitor = service.monitors[stop.index]
+      if (!monitor) return false
+      // Start/Stop needs a file that is actually there; Pick and Clear never
+      // do, which is what makes them the recovery path for a broken one.
+      if (stop.action === 1) return monitor.video !== "" && monitor.available !== false
+      return stop.action === 0 || stop.action === 2
+    }
+    return false
+  }
+
+  function monitorActionEnabled(row, action) { return stopEnabled(monitorStopAt(row, action)) }
+
+  function firstEnabledAction(row) {
+    var count = monitorActionCount(service.monitors[row])
+    for (var a = 0; a < count; a++)
+      if (monitorActionEnabled(row, a)) return a
+    return -1
+  }
+
+  function scanGlobal(start, direction) {
+    var i = start
+    while (i >= 0 && i < globalActions.length) {
+      if (stopEnabled(globalStopAt(i))) return i
+      i += direction
+    }
+    return -1
+  }
+
+  function scanMonitorRow(start, direction) {
+    var i = start
+    while (i >= 0 && i < service.monitors.length) {
+      if (firstEnabledAction(i) >= 0) return i
+      i += direction
+    }
+    return -1
+  }
+
+  function hoverHeader() {
+    if (stopEnabled({ kind: "header" })) setCursor("header", 0)
+  }
+  function hoverGlobal(action) {
+    var index = globalStopIndex(action)
+    if (index >= 0 && stopEnabled(globalStopAt(index))) setCursor("global", index)
+  }
+  function hoverMonitor(row, action) {
+    if (stopEnabled(monitorStopAt(row, action))) setCursor("monitor", row, action)
+  }
+
   function setCursor(section, index, action) {
     if (index < 0) return
     cursorActive = true
@@ -71,84 +137,123 @@ Panel {
     return cursorActive && focusSection === "monitor" && selectedIndex === row && actionIndex === action
   }
 
-  // Keeps the cursor inside what is actually rendered: a monitor can lose its
-  // video (three actions become one) and the global row can change while a
-  // message is up.
+  // Keeps the cursor inside what is actually rendered and on something that
+  // can be activated: a monitor can lose its video (three actions become
+  // one, Start switches off) and the global row changes while a message is
+  // up. If a command is running and nothing at all is enabled, the position
+  // is kept rather than teleporting the cursor.
   function ensureCursor() {
-    if (focusSection === "global") {
-      if (globalActions.length === 0) { focusSection = "header"; selectedIndex = 0; actionIndex = 0; return }
-      selectedIndex = Math.max(0, Math.min(selectedIndex, globalActions.length - 1))
+    if (focusSection === "monitor" && service.monitors.length === 0) {
+      focusSection = "global"
+      selectedIndex = 0
       actionIndex = 0
-      return
+    }
+    if (focusSection === "global") {
+      if (globalActions.length === 0) {
+        focusSection = "header"
+        selectedIndex = 0
+        actionIndex = 0
+      } else {
+        var g = Math.max(0, Math.min(selectedIndex, globalActions.length - 1))
+        var target = stopEnabled(globalStopAt(g)) ? g : scanGlobal(g, 1)
+        if (target < 0) target = scanGlobal(g, -1)
+        selectedIndex = target >= 0 ? target : g
+        actionIndex = 0
+        return
+      }
     }
     if (focusSection === "monitor") {
-      if (service.monitors.length === 0) {
-        focusSection = globalActions.length > 0 ? "global" : "header"
-        selectedIndex = 0; actionIndex = 0; return
-      }
       selectedIndex = Math.max(0, Math.min(selectedIndex, service.monitors.length - 1))
-      actionIndex = Math.max(0, Math.min(actionIndex, monitorActionCount(service.monitors[selectedIndex]) - 1))
+      var wanted = Math.max(0, Math.min(actionIndex, monitorActionCount(service.monitors[selectedIndex]) - 1))
+      if (monitorActionEnabled(selectedIndex, wanted)) {
+        actionIndex = wanted
+        return
+      }
+      var a = firstEnabledAction(selectedIndex)
+      if (a >= 0) {
+        actionIndex = a
+        return
+      }
+      var row = scanMonitorRow(selectedIndex, 1)
+      if (row < 0) row = scanMonitorRow(selectedIndex, -1)
+      if (row >= 0) {
+        selectedIndex = row
+        actionIndex = firstEnabledAction(row)
+        return
+      }
+      var g2 = scanGlobal(globalActions.length - 1, -1)
+      if (g2 >= 0) {
+        focusSection = "global"
+        selectedIndex = g2
+        actionIndex = 0
+        return
+      }
+      actionIndex = wanted
       return
     }
     focusSection = "header"
     selectedIndex = 0
     actionIndex = 0
+    if (!stopEnabled({ kind: "header" })) {
+      var g3 = scanGlobal(0, 1)
+      if (g3 >= 0) {
+        focusSection = "global"
+        selectedIndex = g3
+        actionIndex = 0
+      }
+    }
   }
 
   function moveCursor(delta) {
     if (!cursorActive) { cursorActive = true; ensureCursor(); return }
     if (delta === 0) return
+    var direction = delta > 0 ? 1 : -1
 
     if (focusSection === "header") {
-      if (delta > 0) {
-        if (globalActions.length > 0) setCursor("global", 0)
-        else if (service.monitors.length > 0) setCursor("monitor", 0, 0)
+      if (direction > 0) {
+        var g0 = scanGlobal(0, 1)
+        if (g0 >= 0) { setCursor("global", g0); return }
+        var r0 = scanMonitorRow(0, 1)
+        if (r0 >= 0) setCursor("monitor", r0, firstEnabledAction(r0))
       }
       return
     }
 
     if (focusSection === "global") {
-      var g = selectedIndex + delta
-      if (g >= 0 && g < globalActions.length) { setCursor("global", g); return }
-      if (delta > 0) { if (service.monitors.length > 0) setCursor("monitor", 0, 0); return }
-      setCursor("header", 0)
+      var g = scanGlobal(selectedIndex + direction, direction)
+      if (g >= 0) { setCursor("global", g); return }
+      if (direction < 0) { setCursor("header", 0); return }
+      var r = scanMonitorRow(0, 1)
+      if (r >= 0) setCursor("monitor", r, firstEnabledAction(r))
       return
     }
 
-    var m = selectedIndex + delta
-    if (m >= 0 && m < service.monitors.length) {
-      selectedIndex = m
-      actionIndex = Math.min(actionIndex, monitorActionCount(service.monitors[m]) - 1)
-      cursorActive = true
-      Qt.callLater(scrollCursorIntoView)
-      return
-    }
-    if (delta < 0) {
-      if (globalActions.length > 0) setCursor("global", globalActions.length - 1)
-      else setCursor("header", 0)
-    }
+    var row = scanMonitorRow(selectedIndex + direction, direction)
+    if (row >= 0) { setCursor("monitor", row, firstEnabledAction(row)); return }
+    if (direction > 0) return // nothing below the last monitor
+    var g2 = scanGlobal(globalActions.length - 1, -1)
+    if (g2 >= 0) { setCursor("global", g2); return }
+    setCursor("header", 0)
   }
 
   function moveCursorH(delta) {
     if (!cursorActive) { cursorActive = true; ensureCursor(); return }
     if (delta === 0) return
 
-    if (focusSection === "header") {
-      if (delta > 0) {
-        if (globalActions.length > 0) setCursor("global", 0)
-        else if (service.monitors.length > 0) setCursor("monitor", 0, 0)
-      }
-      return
-    }
+    if (focusSection === "header" || focusSection === "global") { moveCursor(delta); return }
 
-    if (focusSection === "global") { moveCursor(delta); return }
-
+    var direction = delta > 0 ? 1 : -1
     var count = monitorActionCount(service.monitors[selectedIndex])
-    var a = actionIndex + delta
-    if (a < 0 || a >= count) return
-    actionIndex = a
-    cursorActive = true
-    Qt.callLater(scrollCursorIntoView)
+    var a = actionIndex + direction
+    while (a >= 0 && a < count) {
+      if (monitorActionEnabled(selectedIndex, a)) {
+        actionIndex = a
+        cursorActive = true
+        Qt.callLater(scrollCursorIntoView)
+        return
+      }
+      a += direction
+    }
   }
 
   function cursorStop() {
@@ -160,25 +265,21 @@ Panel {
 
   function activateCursor() {
     var stop = cursorStop()
-    if (!stop) return
+    if (!stopEnabled(stop)) return
     if (stop.kind === "header") { service.toggle(); return }
 
     if (stop.kind === "global") {
-      // Dismiss and Refresh must stay usable while a command runs — they are
-      // how the user gets out of a wedged panel.
       if (stop.action === "dismiss") { service.clearError(); return }
       if (stop.action === "refresh") { service.refresh(); return }
-      if (service.busy) return
       if (stop.action === "choose") service.pickFor("all")
       else if (stop.action === "image") service.pickImage()
       return
     }
 
-    if (service.busy) return
     var monitor = service.monitors[stop.index]
     if (!monitor) return
     if (stop.action === 0) service.pickFor(monitor.name)
-    else if (stop.action === 1) { if (monitor.available !== false) service.toggleMonitor(monitor.name, !monitor.running) }
+    else if (stop.action === 1) service.toggleMonitor(monitor.name, !monitor.running)
     else if (stop.action === 2) service.clearFor(monitor.name)
   }
 
@@ -199,6 +300,10 @@ Panel {
     target: service
     function onMonitorsChanged() { Qt.callLater(root.ensureCursor) }
     function onLastErrorChanged() { Qt.callLater(root.ensureCursor) }
+    function onBusyChanged() {
+      if (root.cursorActive && !root.stopEnabled(root.cursorStop()))
+        Qt.callLater(root.ensureCursor)
+    }
   }
 
   // ------------------------------------------------------------- status
@@ -220,7 +325,10 @@ Panel {
         else lines.push(m.name + ": no video")
       }
     }
-    if (service.lastError !== "") lines.push("Error: " + service.lastError)
+    if (service.lastError !== "") {
+      lines.push("Error: " + service.lastError)
+      if (service.lastHint !== "") lines.push(service.lastHint)
+    }
     lines.push("Left-click: toggle · Right-click: configure")
     return lines.join("\n")
   }
@@ -351,7 +459,7 @@ Panel {
                 busy: service.busy
                 foreground: root.foreground
                 hasCursor: root.headerHasCursor()
-                onHovered: function(isHovered) { if (isHovered) root.setCursor("header", 0) }
+                onHovered: function(isHovered) { if (isHovered) root.hoverHeader() }
                 onHasCursorChanged: if (hasCursor) root.cursorItem = headerSwitch
                 onToggled: service.toggle()
               }
@@ -363,14 +471,32 @@ Panel {
             width: parent.width
             spacing: Style.space(8)
 
-            Text {
+            ColumnLayout {
               Layout.fillWidth: true
-              textFormat: Text.PlainText
-              text: root.showError ? service.lastError : service.actionStatus
-              color: root.showError ? root.urgent : root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              wrapMode: Text.WordWrap
+              spacing: Style.space(2)
+
+              Text {
+                Layout.fillWidth: true
+                textFormat: Text.PlainText
+                text: root.showError ? service.lastError : service.actionStatus
+                color: root.showError ? root.urgent : root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                wrapMode: Text.WordWrap
+              }
+
+              // The step that fixes it: the engine's `hint:` line when it
+              // reported one, otherwise the equivalent written out.
+              Text {
+                visible: root.showError && service.lastHint !== ""
+                Layout.fillWidth: true
+                textFormat: Text.PlainText
+                text: service.lastHint
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                wrapMode: Text.WordWrap
+              }
             }
 
             Button {
@@ -383,7 +509,7 @@ Panel {
               fontFamily: root.fontFamily
               bordered: true
               hasCursor: root.globalHasCursor("dismiss")
-              onHovered: function(isHovered) { if (isHovered) root.setCursor("global", root.globalStopIndex("dismiss")) }
+              onHovered: function(isHovered) { if (isHovered) root.hoverGlobal("dismiss") }
               onHasCursorChanged: if (hasCursor) root.cursorItem = dismissButton
               onClicked: service.clearError()
             }
@@ -401,7 +527,7 @@ Panel {
             bordered: true
             enabled: !service.busy
             hasCursor: root.globalHasCursor("choose")
-            onHovered: function(isHovered) { if (isHovered) root.setCursor("global", root.globalStopIndex("choose")) }
+            onHovered: function(isHovered) { if (isHovered) root.hoverGlobal("choose") }
             onHasCursorChanged: if (hasCursor) root.cursorItem = ctaButton
             onClicked: service.pickFor("all")
           }
@@ -421,7 +547,7 @@ Panel {
               bordered: true
               enabled: !service.busy
               hasCursor: root.globalHasCursor("image")
-              onHovered: function(isHovered) { if (isHovered) root.setCursor("global", root.globalStopIndex("image")) }
+              onHovered: function(isHovered) { if (isHovered) root.hoverGlobal("image") }
               onHasCursorChanged: if (hasCursor) root.cursorItem = imageButton
               onClicked: service.pickImage()
             }
@@ -436,7 +562,7 @@ Panel {
               fontFamily: root.fontFamily
               bordered: true
               hasCursor: root.globalHasCursor("refresh")
-              onHovered: function(isHovered) { if (isHovered) root.setCursor("global", root.globalStopIndex("refresh")) }
+              onHovered: function(isHovered) { if (isHovered) root.hoverGlobal("refresh") }
               onHasCursorChanged: if (hasCursor) root.cursorItem = refreshButton
               onClicked: service.refresh()
             }
@@ -505,7 +631,7 @@ Panel {
     readonly property bool available: monitor ? monitor.available !== false : true
     readonly property bool isRunning: monitor ? monitor.running === true : false
     readonly property string label: {
-      if (video) return available ? videoName : "Missing or unreadable"
+      if (video) return available ? videoName : videoName + " — missing or unreadable"
       if (description !== "") return "No video · " + description
       return "No video chosen"
     }
@@ -559,6 +685,20 @@ Panel {
           font.pixelSize: Style.font.caption
           elide: Text.ElideRight
         }
+
+        // Recovery path for a file that has gone away: Pick and Clear both
+        // stay enabled, so say so instead of leaving a dead Start button as
+        // the only thing to look at.
+        Text {
+          visible: row.video !== "" && !row.available
+          textFormat: Text.PlainText
+          Layout.fillWidth: true
+          text: "Pick a new video for this monitor, or Clear the assignment."
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          wrapMode: Text.WordWrap
+        }
       }
 
       Button {
@@ -571,7 +711,7 @@ Panel {
         bordered: true
         enabled: !service.busy
         hasCursor: root.monitorHasCursor(row.rowIndex, 0)
-        onHovered: function(isHovered) { if (isHovered) root.setCursor("monitor", row.rowIndex, 0) }
+        onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 0) }
         onHasCursorChanged: if (hasCursor) root.cursorItem = pickButton
         onClicked: service.pickFor(row.name)
       }
@@ -587,7 +727,7 @@ Panel {
         bordered: true
         enabled: !service.busy && row.available
         hasCursor: root.monitorHasCursor(row.rowIndex, 1)
-        onHovered: function(isHovered) { if (isHovered) root.setCursor("monitor", row.rowIndex, 1) }
+        onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 1) }
         onHasCursorChanged: if (hasCursor) root.cursorItem = toggleButton
         onClicked: service.toggleMonitor(row.name, !row.isRunning)
       }
@@ -603,7 +743,7 @@ Panel {
         bordered: true
         enabled: !service.busy
         hasCursor: root.monitorHasCursor(row.rowIndex, 2)
-        onHovered: function(isHovered) { if (isHovered) root.setCursor("monitor", row.rowIndex, 2) }
+        onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 2) }
         onHasCursorChanged: if (hasCursor) root.cursorItem = clearButton
         onClicked: service.clearFor(row.name)
       }
