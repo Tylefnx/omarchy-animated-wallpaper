@@ -248,6 +248,7 @@ bin/lib/                          Shared paths, monitor discovery, process
                                   ownership, and actions
 scripts/wallpaper-video-start     Post-boot hook
 scripts/check.sh                  Offline quality gates
+scripts/install-scenarios.sh      Install/uninstall scenarios for check.sh
 install.sh                        Dependency checks + plugin add + bar + hook
 uninstall.sh                      Full removal (keeps your data by default)
 ```
@@ -260,10 +261,19 @@ bash scripts/check.sh
 
 Runs the quality gates offline: shell syntax, manifest and
 `omarchy plugin validate`, Qt 6 `qmllint`, an isolated engine smoke test in a
-throwaway config, post-boot hook behaviour, and installer dry runs. Nothing
-writes to your real Omarchy configuration, and tools that are not installed
-(for example `shellcheck`) are reported as skipped rather than passing
-silently.
+throwaway config, post-boot hook behaviour, installer dry runs, and a scenario
+suite that drives `install.sh` / `uninstall.sh` end to end against a throwaway
+HOME with a fake `omarchy` CLI — fresh install, re-run, fast-forward update,
+`--local` refusals, the non-Git backup and its rollback, slow and failed
+shell discovery, hook/enable/remove failures, a stopped shell, confirmation
+refusal, `--purge`, symlinked settings, and a running player that must be
+stopped only on a real run.
+
+Nothing writes to your real Omarchy configuration: every scenario runs with
+its own HOME, the fake CLI refuses to run anywhere else, and the suite
+verifies that your real plugin folder, hook, settings and `shell.json` are
+byte-for-byte untouched afterwards. Tools that are not installed (for example
+`shellcheck`) are reported as skipped rather than passing silently.
 
 ## License
 

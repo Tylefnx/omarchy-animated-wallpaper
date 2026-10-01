@@ -33,6 +33,7 @@ shell_files=(
   "$ROOT/bin/lib/actions.sh"
   "$ROOT/scripts/wallpaper-video-start"
   "$ROOT/scripts/check.sh"
+  "$ROOT/scripts/install-scenarios.sh"
 )
 for file in "${shell_files[@]}"; do
   rel="${file#"$ROOT"/}"
@@ -129,7 +130,10 @@ fi
 # -------------------------------------------------------------- engine
 section "Engine (isolated config, real Omarchy state untouched)"
 TMP_ROOT=$(mktemp -d) || { bad "could not create a temporary directory"; TMP_ROOT=""; }
-cleanup() { [[ -n ${TMP_ROOT:-} && -d $TMP_ROOT ]] && rm -rf -- "$TMP_ROOT"; }
+cleanup() {
+  if declare -F scen_teardown >/dev/null 2>&1; then scen_teardown; fi
+  [[ -n ${TMP_ROOT:-} && -d $TMP_ROOT ]] && rm -rf -- "$TMP_ROOT"
+}
 trap cleanup EXIT
 
 ENGINE="$ROOT/bin/wallpaper-video"
@@ -307,6 +311,18 @@ if [[ -n $TMP_ROOT ]]; then
   else
     bad "uninstall.sh --dry-run deleted something"
   fi
+fi
+
+# --------------------------------------------- install/uninstall failure paths
+section "Install/uninstall scenarios (throwaway HOME, fake omarchy CLI)"
+if [[ -z $TMP_ROOT ]]; then
+  skip "no temporary directory — scenario suite not run"
+elif ! command -v git >/dev/null 2>&1; then
+  skip "git not installed — the install/uninstall scenario suite needs it"
+else
+  # shellcheck source=install-scenarios.sh
+  source "$ROOT/scripts/install-scenarios.sh"
+  scenario_suite
 fi
 
 # ----------------------------------------------------------------- summary
