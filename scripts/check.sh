@@ -158,6 +158,12 @@ else
   bad "Panel: the fix-it hint is computed but never shown"
 fi
 
+if grep -q 'exitCode !== 0 && exitCode !== 1' "$SERVICE"; then
+  bad "Service: the picker reads exit 1 as a cancelled dialog, hiding every die() it can report"
+else
+  ok "Service: a failed picker run is reported rather than mistaken for a cancel"
+fi
+
 # -------------------------------------------------------------- engine
 section "Engine (isolated config, real Omarchy state untouched)"
 TMP_ROOT=$(mktemp -d) || { bad "could not create a temporary directory"; TMP_ROOT=""; }

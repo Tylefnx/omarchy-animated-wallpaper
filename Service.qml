@@ -290,8 +290,11 @@ Item {
     stdout: StdioCollector { id: pickStdout; waitForEnd: true }
     stderr: StdioCollector { id: pickStderr; waitForEnd: true }
     onExited: function(exitCode) {
-      // zenity exits 1 when the dialog is cancelled — that is not an error.
-      if (exitCode !== 0 && exitCode !== 1) {
+      // The helper already folds a cancelled zenity dialog into exit 0, so any
+      // non-zero code here is a real failure — treating 1 as "cancelled" would
+      // swallow every die() the picker path can report (unknown monitor,
+      // missing zenity, unreadable file).
+      if (exitCode !== 0) {
         var failure = root.parseFailure(String(pickStderr.text || ""), exitCode, "The file picker could not complete")
         root.actionError = failure.message
         root.actionHint = failure.hint
