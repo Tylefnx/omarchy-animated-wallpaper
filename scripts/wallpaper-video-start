@@ -8,4 +8,20 @@ HELPER="$HOME/.config/omarchy/plugins/r4venward.wallpaper-video/bin/wallpaper-vi
 # Let the compositor and its layer-shell surfaces settle first.
 sleep 2
 
-"$HELPER" start --restore >/dev/null 2>&1 || true
+# Capture the report so it can be shown instead of being swallowed: an idle
+# desktop (no videos assigned) is not an error, but an assigned video that
+# will not play deserves a visible reason.
+output=$("$HELPER" start --restore 2>&1)
+status=$?
+
+if ((status != 0)); then
+  message="${output//$'\n'/ }"
+  [[ -n "$message" ]] || message="Wallpaper could not start."
+  printf 'wallpaper-video: %s\n' "$message" >&2
+  command -v notify-send >/dev/null 2>&1 &&
+    notify-send "Animated wallpaper" "$message" --urgency=critical 2>/dev/null || true
+fi
+
+# Always exit 0: omarchy-hook reports "Hook failed: <path>" for any non-zero
+# result, and there is nothing further for it to act on at boot.
+exit 0

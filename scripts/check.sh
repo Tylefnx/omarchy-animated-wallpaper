@@ -229,6 +229,40 @@ fi
 
 if [[ -n ${saved_xdg+x} ]]; then export XDG_CONFIG_HOME="$saved_xdg"; else unset XDG_CONFIG_HOME; fi
 
+# ------------------------------------------------------- post-boot hook
+section "Post-boot hook (temp HOME)"
+HOOK="$ROOT/scripts/wallpaper-video-start"
+HOOK_HOME="$TMP_ROOT/hookhome"
+HOOK_HELPER="$HOOK_HOME/.config/omarchy/plugins/$PLUGIN_ID/bin/wallpaper-video"
+run_hook() { HOME="$HOOK_HOME" bash "$HOOK"; }
+
+if [[ -n $TMP_ROOT ]]; then
+  if out=$(run_hook 2>&1); then
+    ok "hook exits 0 when the plugin is not installed"
+  else
+    bad "hook exits non-zero when the plugin is not installed → $(printf '%s' "$out" | tr '\n' ' ')"
+  fi
+
+  mkdir -p "$(dirname -- "$HOOK_HELPER")"
+  printf '#!/bin/bash\nprintf "assigned video for DP-1 is missing\\n" >&2\nexit 1\n' >"$HOOK_HELPER"
+  chmod +x "$HOOK_HELPER"
+  status=0
+  out=$(run_hook 2>&1) || status=$?
+  if ((status == 0)) && [[ $out == *"assigned video for DP-1 is missing"* ]]; then
+    ok "hook surfaces a failed start but never fails the boot"
+  else
+    bad "hook failed: exit=$status output=$(printf '%s' "$out" | tr '\n' ' ')"
+  fi
+
+  printf '#!/bin/bash\nexit 0\n' >"$HOOK_HELPER"
+  if out=$(run_hook 2>&1); then
+    ok "hook exits 0 on a successful start"
+  else
+    bad "hook exits non-zero on a successful start → $(printf '%s' "$out" | tr '\n' ' ')"
+  fi
+  rm -rf -- "$HOOK_HOME"
+fi
+
 # ------------------------------------------------------- install/uninstall
 section "Installer scripts (temp HOME, dry run only)"
 FAKE_HOME="$TMP_ROOT/home"
