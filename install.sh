@@ -1,9 +1,11 @@
 #!/bin/bash
 # install.sh — install or update the animated wallpaper plugin on Omarchy.
 #
-#   bash install.sh            install from GitHub, or fast-forward an
-#                              existing git-managed install
-#   bash install.sh --local    install this checkout as-is (development)
+#   bash install.sh            install from GitHub, fast-forward an existing
+#                              git-managed install, or replace a local copy
+#                              after moving it aside as a .backup- folder
+#   bash install.sh --local    mirror this checkout over the installed copy
+#                              (files found only in that copy are removed)
 #   bash install.sh --dry-run  print the plan and change nothing
 #
 # Safe to re-run. An already-placed bar widget stays where you put it, your
@@ -32,7 +34,7 @@ LOCAL=0
 DRY_RUN=0
 
 usage() {
-  sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 while (( $# > 0 )); do
@@ -126,26 +128,70 @@ echo "  $OK $PLUGIN_ID (bar section: $DEFAULT_SECTION)"
 # "updated" from Git: it is not a checkout, so claiming otherwise would be a
 # lie the user only discovers on their next install.
 MODE="fresh"
+BACKUP_DIR=""
 if (( LOCAL )); then
   MODE="local"
-elif [[ -e "$PLUGIN_DIR" ]]; then
+elif [[ -e "$PLUGIN_DIR" || -L "$PLUGIN_DIR" ]]; then
   if [[ -d "$PLUGIN_DIR/.git" ]]; then
     MODE="update"
   else
-    fail "a local copy of $PLUGIN_ID is already installed at $PLUGIN_DIR." \
-      "It is not a Git checkout, so there is nothing to update from $REPO_URL." \
+    # Not a checkout, so there is nothing to fast-forward. Rather than
+    # refusing (which leaves the user stuck with no working install) or
+    # silently overwriting (which would destroy their edits), the copy is
+    # moved aside and kept before the Git install replaces it.
+    MODE="replace"
+    BACKUP_DIR="$PLUGIN_DIR.backup-$(date +%Y%m%d%H%M%S)"
+  fi
+fi
+
+# --local mirrors over whatever is already at $PLUGIN_DIR, and `rsync
+# --delete` removes anything that exists only there. Never point that at a
+# folder this plugin did not create: a mistyped path or a shared folder must
+# be refused before a single byte is written.
+if (( LOCAL )) && [[ -e "$PLUGIN_DIR" || -L "$PLUGIN_DIR" ]]; then
+  owned_by_us=1
+  ownership_reason=""
+  if [[ -L "$PLUGIN_DIR" ]]; then
+    owned_by_us=0
+    ownership_reason="$PLUGIN_DIR is a symlink"
+  elif [[ ! -f "$PLUGIN_DIR/manifest.json" ]]; then
+    owned_by_us=0
+    ownership_reason="$PLUGIN_DIR has no manifest.json"
+  else
+    existing_id=$(jq -r '.id // empty' "$PLUGIN_DIR/manifest.json" 2>/dev/null || true)
+    if [[ $existing_id != "$PLUGIN_ID" ]]; then
+      owned_by_us=0
+      ownership_reason="$PLUGIN_DIR belongs to ${existing_id:-an unidentified plugin}"
+    fi
+  fi
+  if (( ! owned_by_us )); then
+    fail "--local refuses to overwrite $PLUGIN_DIR." "$ownership_reason" \
       "" \
-      "  Sync this checkout over it:   bash install.sh --local" \
-      "  Start over from GitHub:       omarchy plugin remove $PLUGIN_ID --yes" \
-      "                                bash install.sh"
+      "Nothing was changed." \
+      "  Re-run without --local for a fresh install instead — the existing" \
+      "  folder is moved aside as a backup, never deleted." \
+      "  Or remove the existing entry first: omarchy plugin remove $PLUGIN_ID --yes"
   fi
 fi
 
 echo ""
 echo "  Plan:"
 case "$MODE" in
-  local) echo "    · sync this checkout into $PLUGIN_DIR" ;;
+  local)
+    if [[ "$SCRIPT_DIR" == "$PLUGIN_DIR" ]]; then
+      echo "    · already running from $PLUGIN_DIR (nothing to copy)"
+    elif [[ -e "$PLUGIN_DIR" || -L "$PLUGIN_DIR" ]]; then
+      echo "    · mirror this checkout over $PLUGIN_DIR"
+      echo "      every file found only in $PLUGIN_DIR is removed"
+    else
+      echo "    · copy this checkout into the new folder $PLUGIN_DIR"
+    fi
+    ;;
   fresh) echo "    · clone $REPO_URL into $PLUGIN_DIR" ;;
+  replace)
+    echo "    · move the existing copy aside to $BACKUP_DIR and keep it there"
+    echo "    · clone $REPO_URL into $PLUGIN_DIR"
+    ;;
   update) echo "    · fast-forward the install at $PLUGIN_DIR" ;;
 esac
 echo "    · enable $PLUGIN_ID in the bar, if it is not enabled already"
@@ -154,7 +200,7 @@ echo "    · keep ${XDG_CONFIG_HOME:-$HOME/.config}/wallpaper-video untouched"
 
 if (( DRY_RUN )); then
   echo ""
-  echo -e "  $SKIP dry run — nothing was changed."
+  echo -e "  $SKIP dry run — nothing was changed; run without --dry-run to apply the plan above."
   exit 0
 fi
 
@@ -162,6 +208,32 @@ echo ""
 echo "  Installing plugin files..."
 
 case "$MODE" in
+  replace)
+    moved=0
+    if [[ -e "$PLUGIN_DIR" || -L "$PLUGIN_DIR" ]]; then
+      if ! mv -- "$PLUGIN_DIR" "$BACKUP_DIR"; then
+        fail "could not move $PLUGIN_DIR aside to $BACKUP_DIR." \
+          "Check the permissions on ~/.config/omarchy/plugins."
+      fi
+      moved=1
+      mark "existing copy moved aside to $BACKUP_DIR"
+    fi
+    if ! output=$(omarchy plugin add "$REPO_URL" --yes 2>&1); then
+      # The Git install is the only step that can fail after the move, so
+      # undo it: leaving the user with no plugin at all is worse than the
+      # state they started in.
+      if (( moved )); then
+        if mv -- "$BACKUP_DIR" "$PLUGIN_DIR" 2>/dev/null; then
+          printf '  %s the previous copy was put back at %s\n' "$OK" "$PLUGIN_DIR"
+        else
+          printf '  %s your previous copy is still at %s\n' "$WARN" "$BACKUP_DIR"
+        fi
+      fi
+      fail "omarchy plugin add failed." "$output" \
+        "Retry with: omarchy plugin add $REPO_URL --yes"
+    fi
+    mark "plugin cloned from $REPO_URL"
+    ;;
   fresh)
     if ! output=$(omarchy plugin add "$REPO_URL" --yes 2>&1); then
       fail "omarchy plugin add failed." "$output" \
@@ -287,6 +359,9 @@ echo ""
 echo "  Plugin   $PLUGIN_DIR"
 echo "  Hook     $HOOK_TARGET"
 echo "  Settings ${XDG_CONFIG_HOME:-$HOME/.config}/wallpaper-video (never modified by install)"
+if [[ -n $BACKUP_DIR && -e $BACKUP_DIR ]]; then
+  echo "  Backup   $BACKUP_DIR (the replaced copy — delete it when you no longer need it)"
+fi
 echo ""
 if (( shell_up )); then
   echo "  Left-click the wallpaper icon in the bar to toggle, right-click to open the panel."

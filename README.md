@@ -54,14 +54,22 @@ it tells you exactly what to run instead of failing silently.
 
 | Flag | Effect |
 |------|--------|
-| `--dry-run` | Print every step without touching your system |
-| `--local` | Install this checkout instead of cloning from GitHub |
+| `--dry-run` | Print every step — including any backup or overwrite — without touching your system |
+| `--local` | Mirror this checkout over the installed copy instead of cloning from GitHub |
 | `--help` | Show usage |
 
-Re-running `bash install.sh` updates an existing install in place: it mirrors
-the new files over the plugin folder while leaving your configuration alone.
-If that folder is no longer a git checkout the installer refuses to guess and
-explains how to recover, rather than overwriting your data.
+Re-running `bash install.sh` updates an existing install in place: a
+git-managed folder is fast-forwarded by Omarchy, and your configuration is
+never touched. If that folder is **no longer a git checkout** the installer
+moves it aside as `<plugin>.backup-<timestamp>` and clones fresh — the old
+copy stays on disk, it is never deleted, so anything you had edited in it is
+still there when the run finishes.
+
+`--local` is the development path: it mirrors *this* checkout over the
+installed copy with `rsync --delete`, so files found only in the installed
+copy are removed. Before doing that it verifies the target really is this
+plugin's own folder and refuses anything else — a folder without
+`manifest.json`, a folder belonging to a different plugin id, or a symlink.
 
 Prefer doing it by hand?
 
@@ -98,7 +106,7 @@ suggestion above, which you run yourself if needed.
 
 | Area | What it does | Scope |
 |------|--------------|-------|
-| Install | Checks for `mpvpaper`, `zenity`, and Omarchy. `install.sh --local` copies this checkout; regular installation asks Omarchy to add the declared Git repository. | `~/.config/omarchy/plugins/r4venward.wallpaper-video/` |
+| Install | Checks for `mpvpaper`, `zenity`, and Omarchy. `install.sh --local` mirrors this checkout over the plugin folder after confirming the folder is this plugin's own; regular installation asks Omarchy to add the declared Git repository, moving a non-Git copy aside as a backup first. | `~/.config/omarchy/plugins/r4venward.wallpaper-video/` |
 | Bar and startup | Uses Omarchy commands to enable/place the plugin and register the selected post-boot hook. | Omarchy-managed plugin/bar entry and `~/.config/omarchy/hooks/post-boot.d/wallpaper-video-start` |
 | Wallpaper state | Saves each monitor's selected video path, PID/start-time records, the selected image/video mode, and the base image used when videos start. | `${XDG_CONFIG_HOME:-~/.config}/wallpaper-video/` |
 | Runtime commands | Reads monitor names from `hyprctl`; launches `mpvpaper`; opens `zenity` only when you choose a file; applies a chosen image with `omarchy-theme-bg-set`; the post-boot hook notifies if a saved wallpaper cannot start. | Current user session, selected local media, and `~/.local/state/omarchy/current/background` |
