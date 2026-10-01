@@ -21,6 +21,9 @@ Usage: wallpaper-video <command> [args]
   layout <monitor> <mode>      Set per-monitor scaling: fill, fit, stretch, center
   clear <monitor|all>          Clear an assignment
   pick [monitor]               Choose a video with zenity
+  select-video <monitor>       Choose a video for panel preview
+  select-image <monitor>       Choose an Omarchy image for panel preview
+  apply <monitor> <file>       Apply a reviewed wallpaper selection
   image [file]                 Choose or apply a static Omarchy background
   reconcile                    Stop video players after an Omarchy background change
 EOF
@@ -147,6 +150,9 @@ case "$command" in
   layout) [[ $# -eq 2 ]] || usage; set_layout "$1" "$2" ;;
   clear) [[ $# -eq 1 ]] || usage; clear_video "$1" ;;
   pick) [[ $# -le 1 ]] || usage; pick_video "${1:-all}" ;;
+  select-video) [[ $# -eq 1 ]] || usage; select_video "$1" ;;
+  select-image) [[ $# -eq 1 ]] || usage; select_wallpaper "$1" ;;
+  apply) [[ $# -ge 2 && $# -le 3 ]] || usage; apply_selection "$1" "$2" "${3:-fill}" ;;
   wallpaper) [[ $# -eq 1 ]] || usage; pick_wallpaper "$1" ;;
   image)
     [[ $# -le 1 ]] || usage

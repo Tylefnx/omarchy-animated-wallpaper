@@ -154,7 +154,7 @@ valid_video() {
 }
 
 set_video() {
-  local monitor="$1" video="$2" was_running=false m target was_target_running=false
+  local monitor="$1" video="$2" start_after="${3:-false}" was_running=false m target was_target_running=false
   [[ -n "$monitor" && -n "$video" ]] || usage
   [[ -f "$video" && -r "$video" ]] || die "video file does not exist or is not readable: $video"
   [[ "$video" != *$'\n'* ]] || die "video path contains an unsupported newline"
@@ -189,7 +189,10 @@ set_video() {
   atomic_write "$MODE_FILE" video
   capture_background
   if [[ "$monitor" == all && "$was_running" == true ]]; then stop_all; start_all
-  elif [[ "$monitor" != all && "$was_target_running" == true ]]; then stop_monitor "$monitor"; start_monitor "$monitor"; fi
+  elif [[ "$monitor" != all && ( "$was_target_running" == true || "$start_after" == true ) ]]; then
+    [[ "$was_target_running" == true ]] && stop_monitor "$monitor"
+    start_monitor "$monitor"
+  fi
 }
 
 clear_video() {
@@ -220,6 +223,17 @@ pick_video() {
     --file-filter="Videos | *.mp4 *.webm *.mkv *.avi *.mov *.gif *.MP4 *.WEBM *.MKV *.AVI *.MOV *.GIF" 2>/dev/null) || true
   [[ -n "$video" ]] || return 0
   set_video "$monitor" "$video"
+}
+
+select_video() {
+  local monitor="${1:-all}" video
+  command -v zenity >/dev/null 2>&1 || die "zenity is not installed"
+  if [[ "$monitor" != all ]]; then monitor_exists "$monitor" || die "unknown monitor '$monitor'"; fi
+  video=$(zenity --file-selection --title="Select video${monitor:+ for $monitor}" \
+    --file-filter="Videos | *.mp4 *.webm *.mkv *.avi *.mov *.gif *.MP4 *.WEBM *.MKV *.AVI *.MOV *.GIF" 2>/dev/null) || true
+  [[ -n "$video" ]] || return 0
+  valid_video "$video" || die "choose an MP4, WebM, MKV, AVI, MOV, or GIF file: $video"
+  realpath -e -- "$video" || die "cannot resolve video path"
 }
 
 valid_image() {
@@ -266,6 +280,42 @@ pick_wallpaper() {
     die "Omarchy's wallpaper picker could not open"
   [[ -n "$image" ]] || return 0
   set_wallpaper_image "$monitor" "$image"
+}
+
+select_wallpaper() {
+  local monitor="$1" selected="" theme_name theme_dir user_dir image assignment
+  monitor_exists "$monitor" || die "unknown monitor '$monitor'"
+  command -v omarchy-menu-images >/dev/null 2>&1 ||
+    { printf '%s\n' "wallpaper-video: Omarchy's wallpaper picker is not available" >&2
+      printf '%s\n' "hint: install or update Omarchy so omarchy-menu-images is available" >&2
+      return 1; }
+  assignment=$(monitor_file "$monitor") || exit 1
+  if [[ -f "$assignment" && ! -L "$assignment" ]]; then selected=$(<"$assignment"); fi
+  valid_image "$selected" || selected=$(current_background || true)
+  theme_name=$(<"$HOME/.local/state/omarchy/current/theme.name") 2>/dev/null || theme_name=""
+  theme_dir="$HOME/.local/state/omarchy/current/theme/backgrounds"
+  user_dir="$HOME/.config/omarchy/backgrounds/$theme_name"
+  image=$(omarchy-menu-images --selected "$selected" "$theme_dir" "$user_dir") ||
+    die "Omarchy's wallpaper picker could not open"
+  [[ -n "$image" ]] || return 0
+  valid_image "$image" || die "Omarchy selected an unsupported image"
+  realpath -e -- "$image" || die "cannot resolve image path"
+}
+
+apply_selection() {
+  local monitor="$1" path="$2" layout="${3:-fill}"
+  [[ -n "$monitor" && -n "$path" ]] || usage
+  monitor_exists "$monitor" || die "unknown monitor '$monitor'"
+  if ! valid_video "$path" && ! valid_image "$path"; then
+    die "choose a supported image or video file"
+  fi
+  case "$layout" in fill|fit|stretch|center) ;; *) die "choose Fill, Fit, Stretch, or Center" ;; esac
+  set_layout "$monitor" "$layout"
+  if valid_video "$path"; then
+    set_video "$monitor" "$path" true
+  elif valid_image "$path"; then
+    set_wallpaper_image "$monitor" "$path"
+  fi
 }
 
 apply_image() {
