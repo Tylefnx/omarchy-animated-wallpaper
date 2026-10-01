@@ -23,7 +23,7 @@ ensure_auto_pause_support() {
 # panel) or take the reason and re-attach it to the monitor it belongs to
 # (start_all), so no message may depend on being printed bare.
 start_monitor() {
-  local monitor="$1" assignment video pid started pid_file mpv_options
+  local monitor="$1" assignment video pid started pid_file mpv_options layout
   assignment=$(monitor_file "$monitor") || exit 1
   if [[ ! -f "$assignment" || -L "$assignment" ]]; then
     printf 'wallpaper-video: no wallpaper is assigned to this monitor\n' >&2
@@ -57,6 +57,13 @@ start_monitor() {
   if valid_image "$video"; then
     mpv_options="no-audio image-display-duration=inf scale=ewa_lanczossharp dscale=mitchell"
   fi
+  layout=$(monitor_layout "$monitor") || exit 1
+  case "$layout" in
+    fill) mpv_options+=" keepaspect=yes panscan=1" ;;
+    fit) mpv_options+=" keepaspect=yes panscan=0" ;;
+    stretch) mpv_options+=" keepaspect=no" ;;
+    center) mpv_options+=" video-unscaled=yes keepaspect=yes panscan=0" ;;
+  esac
   setsid mpvpaper --auto-pause -a MAX -o "$mpv_options" "$monitor" "$video" >/dev/null 2>&1 &
   pid=$!
   started=""
@@ -74,6 +81,23 @@ start_monitor() {
   pid_file=$(pid_path "$monitor") || exit 1
   atomic_write "$pid_file" "$pid $started"
   disown "$pid" 2>/dev/null || true
+}
+
+set_layout() {
+  local monitor="$1" layout="$2" file pid_file pid started was_running=false
+  [[ -n "$monitor" && -n "$layout" ]] || usage
+  case "$layout" in fill|fit|stretch|center) ;; *) die "choose Fill, Fit, Stretch, or Center" ;; esac
+  monitor_is_known "$monitor" || die "unknown monitor '$monitor'"
+  file=$(layout_file "$monitor") || exit 1
+  pid_file=$(pid_path "$monitor") || exit 1
+  if [[ -f "$pid_file" && ! -L "$pid_file" ]] && IFS=' ' read -r pid started <"$pid_file"; then
+    owned_pid_is_running "$pid" "$started" && was_running=true
+  fi
+  atomic_write "$file" "$layout"
+  if [[ "$was_running" == true ]]; then
+    stop_monitor "$monitor"
+    start_monitor "$monitor"
+  fi
 }
 
 # Start every assigned monitor. Success stays quiet; a partial failure reports

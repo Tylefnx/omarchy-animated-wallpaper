@@ -18,6 +18,7 @@ Usage: wallpaper-video <command> [args]
   toggle                       Toggle all configured wallpapers
   set <monitor|all> <file>     Assign a video file (mp4, webm, mkv, avi, mov, gif)
   wallpaper <monitor>          Choose a static wallpaper for one monitor
+  layout <monitor> <mode>      Set per-monitor scaling: fill, fit, stretch, center
   clear <monitor|all>          Clear an assignment
   pick [monitor]               Choose a video with zenity
   image [file]                 Choose or apply a static Omarchy background
@@ -28,10 +29,10 @@ EOF
 
 status_json() {
   require_python
-  python3 - "$MONITORS_DIR" "$PIDS_DIR" "$(wallpaper_mode)" <<'PY'
+  python3 - "$MONITORS_DIR" "$PIDS_DIR" "$(wallpaper_mode)" "$LAYOUTS_DIR" <<'PY'
 import json, os, subprocess, sys
 
-monitors_dir, pids_dir, mode = sys.argv[1:]
+monitors_dir, pids_dir, mode, layouts_dir = sys.argv[1:]
 try:
     proc = subprocess.run(["hyprctl", "monitors", "-j"], capture_output=True,
                           text=True, timeout=5, check=True)
@@ -52,6 +53,16 @@ for device in devices:
             with open(assignment, encoding="utf-8") as stream: video = stream.read().strip()
     except OSError: pass
     available = bool(video and os.path.isfile(video) and os.access(video, os.R_OK))
+    layout = "fill"
+    layout_path = os.path.join(layouts_dir, name)
+    try:
+        if (os.path.isdir(layouts_dir) and not os.path.islink(layouts_dir)
+                and os.path.isfile(layout_path) and not os.path.islink(layout_path)):
+            with open(layout_path, encoding="ascii") as stream:
+                saved_layout = stream.read().strip()
+            if saved_layout in ("fill", "fit", "stretch", "center"):
+                layout = saved_layout
+    except OSError: pass
     running = False
     pid_file = os.path.join(pids_dir, name + ".pid")
     try:
@@ -68,7 +79,7 @@ for device in devices:
     except (OSError, ValueError, IndexError, TypeError): pass
     result.append({"name": name, "description": device.get("description") or "",
                    "video": video, "videoName": os.path.basename(video) if video else "",
-                   "available": available, "running": running})
+                   "available": available, "running": running, "layout": layout})
 print(json.dumps({"monitors": result,
                   "active": sum(bool(m["running"]) for m in result),
                   "total": len(result), "mode": mode}))
@@ -133,6 +144,7 @@ case "$command" in
     fi
     ;;
   set) [[ $# -eq 2 ]] || usage; set_video "$1" "$2" ;;
+  layout) [[ $# -eq 2 ]] || usage; set_layout "$1" "$2" ;;
   clear) [[ $# -eq 1 ]] || usage; clear_video "$1" ;;
   pick) [[ $# -le 1 ]] || usage; pick_video "${1:-all}" ;;
   wallpaper) [[ $# -eq 1 ]] || usage; pick_wallpaper "$1" ;;

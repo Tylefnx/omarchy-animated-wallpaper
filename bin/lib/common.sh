@@ -4,6 +4,7 @@
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/wallpaper-video"
 MONITORS_DIR="$CONFIG_DIR/monitors"
 PIDS_DIR="$CONFIG_DIR/pids"
+LAYOUTS_DIR="$CONFIG_DIR/layouts"
 MODE_FILE="$CONFIG_DIR/mode"
 BACKGROUND_FILE="$CONFIG_DIR/background"
 
@@ -32,6 +33,20 @@ pid_path() {
   valid_monitor_name "$1" || die "invalid monitor name: $1"
   [[ ! -L "$PIDS_DIR" && ( ! -e "$PIDS_DIR" || -d "$PIDS_DIR" ) ]] || die "unsafe process state directory"
   printf '%s/%s.pid' "$PIDS_DIR" "$1"
+}
+
+layout_file() {
+  valid_monitor_name "$1" || die "invalid monitor name: $1"
+  [[ ! -L "$LAYOUTS_DIR" && ( ! -e "$LAYOUTS_DIR" || -d "$LAYOUTS_DIR" ) ]] || die "unsafe layout configuration directory"
+  printf '%s/%s' "$LAYOUTS_DIR" "$1"
+}
+
+monitor_layout() {
+  local file value
+  file=$(layout_file "$1") || return 1
+  [[ -f "$file" && ! -L "$file" ]] || { printf 'fill'; return; }
+  IFS= read -r value <"$file" || value="fill"
+  case "$value" in fill|fit|stretch|center) printf '%s' "$value" ;; *) printf 'fill' ;; esac
 }
 
 atomic_write() {
