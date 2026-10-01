@@ -88,11 +88,26 @@ Stops the wallpapers, removes the hook, the plugin and its bar entry — and
 **keeps your videos, assignments and settings** by default, so reinstalling
 picks up where you left off.
 
+Nothing is touched before you confirm. The run prints its plan up front with
+a `Confirmation:` line that says how it will proceed — asked on a terminal,
+skipped with `--yes`, or refused when there is no terminal at all — so the
+steps you are about to agree to are visible before the first command runs.
+`--dry-run` prints the same plan and states explicitly that it changes
+nothing.
+
+If a step fails, the run does not end with a bare error: it finishes the
+steps it can, then prints a **"Left to do by hand"** list with one recovery
+command per failure and exits 1.
+
 | Flag | Effect |
 |------|--------|
-| `--dry-run` | List what would be removed and change nothing |
+| `--dry-run` | Print the plan, change nothing, and note that a real run here would refuse without `--yes` |
 | `--purge` | Also delete `${XDG_CONFIG_HOME:-~/.config}/wallpaper-video` |
 | `--yes` | Skip the confirmation prompt (required when not on a terminal) |
+
+A settings directory that is a symlink is reported as such rather than as
+"missing": `--purge` removes the link only and never follows it, so the folder
+behind it is always kept.
 
 ```bash
 bash uninstall.sh --purge --yes   # remove everything, no prompts

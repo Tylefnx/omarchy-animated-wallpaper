@@ -59,20 +59,23 @@ while (( $# > 0 )); do
 done
 
 ERRORS=0
+# Every failure keeps its message and its recovery hints so the run can end
+# with one actionable list instead of leaving the user to scroll back.
+PENDING=()
 ok() { printf '  %s %s\n' "$OK" "$1"; }
 skip() { printf '  %s %s\n' "$SKIP" "$1"; }
-warn() {
-  printf '  %s %s\n' "$WARN" "$1" >&2
-  shift
-  local hint
-  for hint in "$@"; do printf '    %s\n' "$hint" >&2; done
-  ERRORS=$((ERRORS + 1))
-}
-err() {
-  printf '  %s %s\n' "$ERR" "$1" >&2
-  shift
-  local hint
-  for hint in "$@"; do printf '    %s\n' "$hint" >&2; done
+warn() { _report "$WARN" "$@"; }
+err() { _report "$ERR" "$@"; }
+_report() {
+  local mark="$1" msg="$2" hint entry
+  shift 2
+  printf '  %s %s\n' "$mark" "$msg" >&2
+  entry="· $msg"
+  for hint in "$@"; do
+    printf '    %s\n' "$hint" >&2
+    entry+=$'\n'"      $hint"
+  done
+  PENDING+=("$entry")
   ERRORS=$((ERRORS + 1))
 }
 
@@ -112,6 +115,11 @@ PLUGIN_PRESENT=0
 [[ -e $PLUGIN_DIR || -L $PLUGIN_DIR ]] && PLUGIN_PRESENT=1
 CONFIG_PRESENT=0
 [[ -d $CONFIG_DIR && ! -L $CONFIG_DIR ]] && CONFIG_PRESENT=1
+# A settings directory that is a symlink still holds the user's data, but
+# `rm -rf` on a symlink must never be allowed to reach its target. It is
+# reported for what it is and, at most, the link itself is removed.
+CONFIG_LINK=0
+[[ -L $CONFIG_DIR ]] && CONFIG_LINK=1
 LINK_TARGET=""
 LINK_OURS=0
 if [[ -L $BIN_LINK ]]; then
@@ -122,6 +130,19 @@ if [[ -L $BIN_LINK ]]; then
 fi
 
 echo "→ Uninstalling animated wallpaper..."
+echo ""
+# Every mode states plainly what will happen, before anything is touched:
+# a dry run applies nothing, --yes applies without asking, a real terminal is
+# asked first, and a non-terminal is refused outright.
+if (( DRY_RUN )); then
+  echo "  Plan — a dry run; nothing below will happen"
+elif (( ASSUME_YES )); then
+  echo "  Plan — applied immediately (--yes)"
+elif [[ -t 0 && -t 1 ]]; then
+  echo "  Plan — applied after you confirm below"
+else
+  echo "  Plan — will not be applied; confirmation is required"
+fi
 echo ""
 echo "  Will remove:"
 if (( HOOK_PRESENT )); then
@@ -149,17 +170,37 @@ if (( CONFIG_PRESENT )); then
   else
     echo "    · your saved settings in $CONFIG_DIR   (--purge deletes them)"
   fi
+elif (( CONFIG_LINK )); then
+  if (( PURGE )); then
+    echo "    · the link $CONFIG_DIR (the folder it points to is never followed)"
+  else
+    echo "    · the link $CONFIG_DIR   (--purge removes the link only)"
+  fi
 else
   echo "    · no settings directory found"
 fi
 
+echo ""
+if (( DRY_RUN )); then
+  echo "  Confirmation: a dry run stops here, nothing is prompted"
+  if (( ! ASSUME_YES )) && [[ ! -t 0 || ! -t 1 ]]; then
+    echo "    a real run on this input would refuse and exit 1 without --yes"
+  fi
+elif (( ASSUME_YES )); then
+  echo "  Confirmation: skipped (--yes)"
+elif [[ -t 0 && -t 1 ]]; then
+  echo "  Confirmation: will be asked next, before anything is touched"
+else
+  echo "  Confirmation: will refuse and exit 1 — this is not a terminal, pass --yes"
+fi
+
 if (( DRY_RUN )); then
   echo ""
-  echo -e "  $SKIP dry run — nothing was changed."
+  echo -e "  $SKIP dry run — nothing was changed; run without --dry-run to apply the plan above."
   exit 0
 fi
 
-if (( ! HOOK_PRESENT && ! HOOK_LEGACY_PRESENT && ! PLUGIN_PRESENT && ! CONFIG_PRESENT && ! LINK_OURS )); then
+if (( ! HOOK_PRESENT && ! HOOK_LEGACY_PRESENT && ! PLUGIN_PRESENT && ! CONFIG_PRESENT && ! CONFIG_LINK && ! LINK_OURS )); then
   # Nothing of ours exists; still try to stop anything left over from an
   # earlier install so a stray player cannot outlive the plugin.
   if [[ -n $HELPER ]]; then
@@ -172,7 +213,9 @@ fi
 
 if (( ! ASSUME_YES )); then
   if [[ -t 0 && -t 1 ]]; then
-    printf '  Remove the plugin and its hook? [y/N] '
+    scope="the plugin, its hook, its bar entry and its wallpapers"
+    (( PURGE )) && scope="$scope and your saved settings"
+    printf '  Remove %s? [y/N] ' "$scope"
     read -r reply
     case "$reply" in
       y | Y | yes | YES) ;;
@@ -269,21 +312,47 @@ if (( CONFIG_PRESENT )); then
   else
     skip "kept $CONFIG_DIR (run with --purge to delete it)"
   fi
+elif (( CONFIG_LINK )); then
+  link_target=$(readlink -- "$CONFIG_DIR" 2>/dev/null || true)
+  if (( PURGE )); then
+    # `rm` on a symlink removes the link itself; nothing behind it is
+    # followed or deleted.
+    if rm -- "$CONFIG_DIR"; then
+      ok "removed the link $CONFIG_DIR${link_target:+ → $link_target (left in place)}"
+    else
+      err "could not remove the link $CONFIG_DIR" \
+        "Remove it by hand: rm -- '$CONFIG_DIR'"
+    fi
+  else
+    skip "kept the link $CONFIG_DIR (run with --purge to remove the link only)"
+  fi
 else
   skip "no settings directory"
 fi
 
 echo ""
 if (( ERRORS > 0 )); then
-  echo -e "\e[33mUnfinished: $ERRORS step(s) need attention above.\e[0m"
+  echo -e "\e[33mUnfinished: $ERRORS step(s) need attention.\e[0m"
+  echo ""
+  echo "  Left to do by hand:"
+  for entry in "${PENDING[@]}"; do
+    printf '  %s\n' "$entry"
+  done
+  echo ""
 else
   echo -e "\e[32mUninstall complete.\e[0m"
+  echo ""
 fi
-echo ""
 if (( CONFIG_PRESENT && ! PURGE )); then
   echo "  Your saved monitor assignments are still in:"
   echo "      $CONFIG_DIR"
   echo "  Delete them with:"
+  echo "      bash uninstall.sh --purge --yes"
+  echo ""
+elif (( CONFIG_LINK && ! PURGE )); then
+  echo "  Your saved assignments sit behind this link and are untouched:"
+  echo "      $CONFIG_DIR -> $(readlink -- "$CONFIG_DIR" 2>/dev/null || echo '?')"
+  echo "  Remove the link (never its target) with:"
   echo "      bash uninstall.sh --purge --yes"
   echo ""
 fi
