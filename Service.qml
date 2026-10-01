@@ -61,6 +61,7 @@ Item {
   function pickFor(monitor) {
     if (pickProcess.running) return
     lastError = ""
+    actionStatus = "Choose a video for " + monitor + "…"
     pickProcess.command = [root.helper, "pick", monitor]
     pickProcess.running = true
   }
@@ -166,8 +167,10 @@ Item {
     onExited: function(exitCode) {
       // zenity exits 1 when the dialog is cancelled — that is not an error.
       var stderr = String(pickStderr.text || "").trim()
-      if (exitCode !== 0 && exitCode !== 1 && stderr !== "")
-        root.lastError = root.elideError(stderr)
+      if (exitCode !== 0 && exitCode !== 1)
+        root.lastError = root.elideError(stderr || "The file picker could not complete")
+      root.actionStatus = ""
+      actionStatusTimer.stop()
       settleTimer.ticks = 0
       settleTimer.restart()
       root.refresh()

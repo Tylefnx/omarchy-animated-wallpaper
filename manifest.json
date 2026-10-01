@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "r4venward.wallpaper-video",
   "name": "Animated Wallpaper",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "r4venward",
   "license": "MIT",
   "description": "Play a video as your desktop wallpaper, per monitor, through mpvpaper — with a bar toggle and a panel to pick and control the videos.",

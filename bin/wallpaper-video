@@ -1,386 +1,116 @@
 #!/bin/bash
-# wallpaper-video — animated wallpaper engine for the Omarchy shell plugin.
-#
-# mpvpaper renders one video per monitor on a Wayland layer below windows.
-# The quickshell plugin (Service.qml) drives this script, but every command
-# also works standalone from a terminal.
-#
-# Commands:
-#   status [--json]              status as text, or machine JSON for the plugin
-#   start  [<monitor>]           start configured wallpapers (default: all)
-#   stop   [<monitor>]           stop wallpapers this script started
-#   toggle                       start everything, or stop everything
-#   set <monitor|all> <file>     assign a video to a monitor
-#   clear <monitor|all>          remove the assignment and stop that monitor
-#   pick [<monitor>]             pick a file with zenity (default: all monitors)
+# Animated wallpaper engine. Implementation is split into small sourced modules.
 
-set -u
+set -uo pipefail
 
-CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/wallpaper-video"
-MONITORS_DIR="$CONFIG_DIR/monitors"
-PIDS_DIR="$CONFIG_DIR/pids"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+source "$SCRIPT_DIR/lib/common.sh"
+source "$SCRIPT_DIR/lib/monitors.sh"
+source "$SCRIPT_DIR/lib/processes.sh"
+source "$SCRIPT_DIR/lib/actions.sh"
 
 usage() {
   cat >&2 <<'EOF'
 Usage: wallpaper-video <command> [args]
-
-  status [--json]              status as text, or machine JSON for the plugin
-  start  [<monitor>]           start configured wallpapers (default: all)
-  stop   [<monitor>]           stop wallpapers this script started
-  toggle                       start everything, or stop everything
-  set <monitor|all> <file>     assign a video to a monitor
-  clear <monitor|all>          remove the assignment and stop that monitor
-  pick [<monitor>]             pick a file with zenity (default: all monitors)
+  status [--json]              Show monitor status
+  start [monitor]              Start configured wallpapers
+  stop [monitor]               Stop wallpapers started by this helper
+  toggle                       Toggle all configured wallpapers
+  set <monitor|all> <file>     Assign a readable video
+  clear <monitor|all>          Clear an assignment
+  pick [monitor]               Choose a video with zenity
 EOF
   exit 1
 }
-
-# --- monitors -------------------------------------------------------------
-
-monitor_names() {
-  hyprctl monitors -j 2>/dev/null | python3 -c '
-import sys, json
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    data = []
-for m in data:
-    name = m.get("name", "")
-    if name:
-        print(name)
-'
-}
-
-monitor_exists() {
-  monitor_names | grep -Fxq -- "$1"
-}
-
-# --- pid bookkeeping ------------------------------------------------------
-# Every mpvpaper this script starts writes its pid here; stop only ever kills
-# a pid recorded here, and only after /proc/<pid>/comm still says mpvpaper.
-# Nothing else on the system gets touched, no pkill pattern matching.
-
-pid_path() {
-  printf '%s/%s.pid' "$PIDS_DIR" "$1"
-}
-
-pid_is_ours() {
-  local pid="$1" comm
-  case "$pid" in
-    '' | *[!0-9]*) return 1 ;;
-  esac
-  kill -0 "$pid" 2>/dev/null || return 1
-  comm=$(<"/proc/$pid/comm") || return 1
-  [[ "$comm" == "mpvpaper" ]]
-}
-
-read_pid() {
-  local file
-  file=$(pid_path "$1")
-  [[ -f "$file" ]] || return 1
-  cat "$file" 2>/dev/null
-}
-
-any_running() {
-  local f
-  [[ -d "$PIDS_DIR" ]] || return 1
-  for f in "$PIDS_DIR"/*.pid; do
-    [[ -e "$f" ]] || continue
-    pid_is_ours "$(cat "$f" 2>/dev/null)" && return 0
-  done
-  return 1
-}
-
-# --- core actions ---------------------------------------------------------
-
-start_monitor() {
-  local monitor="$1" video pid
-  [[ -f "$MONITORS_DIR/$monitor" ]] || return 1
-  video=$(cat "$MONITORS_DIR/$monitor" 2>/dev/null)
-  [[ -n "$video" && -f "$video" ]] || return 1
-
-  stop_monitor "$monitor"
-  sleep 0.2
-
-  mkdir -p "$PIDS_DIR"
-  mpvpaper -o "no-audio loop" "$monitor" "$video" >/dev/null 2>&1 &
-  pid=$!
-  printf '%s\n' "$pid" > "$(pid_path "$monitor")"
-  disown "$pid" 2>/dev/null || true
-}
-
-stop_monitor() {
-  local file pid i
-  file=$(pid_path "$1")
-  [[ -f "$file" ]] || return 0
-  pid=$(cat "$file" 2>/dev/null)
-  if pid_is_ours "$pid"; then
-    kill "$pid" 2>/dev/null || true
-    for i in 1 2 3 4 5 6 7 8 9 10; do
-      pid_is_ours "$pid" || break
-      sleep 0.1
-    done
-    if pid_is_ours "$pid"; then
-      kill -9 "$pid" 2>/dev/null || true
-    fi
-  fi
-  rm -f "$file"
-}
-
-start_all() {
-  local started=0 monitor
-  while IFS= read -r monitor; do
-    start_monitor "$monitor" && started=$((started + 1))
-  done < <(monitor_names)
-
-  if [[ $started -eq 0 ]]; then
-    notify-send "Animated wallpaper" "No videos configured. Open the wallpaper panel to pick one." \
-      --urgency=normal 2>/dev/null || true
-    return 1
-  fi
-}
-
-stop_all() {
-  local f
-  [[ -d "$PIDS_DIR" ]] || return 0
-  for f in "$PIDS_DIR"/*.pid; do
-    [[ -e "$f" ]] || continue
-    stop_monitor "$(basename "$f" .pid)"
-  done
-}
-
-# --- assignments ----------------------------------------------------------
-
-set_video() {
-  local monitor="$1" video="$2" was_running=false m
-
-  [[ -n "$monitor" && -n "$video" ]] || usage
-
-  if [[ "$monitor" != "all" ]]; then
-    monitor_exists "$monitor" || {
-      echo "wallpaper-video: unknown monitor '$monitor'" >&2
-      exit 1
-    }
-  fi
-
-  mkdir -p "$MONITORS_DIR" "$PIDS_DIR"
-  any_running && was_running=true
-
-  if [[ "$monitor" == "all" ]]; then
-    while IFS= read -r m; do
-      printf '%s\n' "$video" > "$MONITORS_DIR/$m"
-    done < <(monitor_names)
-  else
-    printf '%s\n' "$video" > "$MONITORS_DIR/$monitor"
-  fi
-
-  # Restart whatever was playing so the new video shows up immediately.
-  if $was_running; then
-    stop_all
-    start_all
-  fi
-}
-
-clear_video() {
-  local monitor="$1" m
-  [[ -n "$monitor" ]] || usage
-
-  if [[ "$monitor" == "all" ]]; then
-    while IFS= read -r m; do
-      stop_monitor "$m"
-      rm -f "$MONITORS_DIR/$m"
-    done < <(monitor_names)
-  else
-    stop_monitor "$monitor"
-    rm -f "$MONITORS_DIR/$monitor"
-  fi
-}
-
-pick_video() {
-  local monitor="${1:-all}" video
-
-  command -v zenity >/dev/null 2>&1 || {
-    echo "wallpaper-video: zenity is not installed" >&2
-    exit 1
-  }
-  if [[ "$monitor" != "all" ]]; then
-    monitor_exists "$monitor" || {
-      echo "wallpaper-video: unknown monitor '$monitor'" >&2
-      exit 1
-    }
-  fi
-
-  video=$(zenity --file-selection \
-    --title="Select video${monitor:+ for $monitor}" \
-    --file-filter="Videos | *.mp4 *.webm *.mkv *.avi *.mov *.gif *.MP4 *.WEBM *.MKV" \
-    2>/dev/null) || true
-
-  [[ -n "$video" ]] || exit 0
-  set_video "$monitor" "$video"
-}
-
-# --- status ---------------------------------------------------------------
 
 status_json() {
   python3 - "$MONITORS_DIR" "$PIDS_DIR" <<'PY'
 import json, os, subprocess, sys
 
-monitors_dir, pids_dir = sys.argv[1], sys.argv[2]
-
+monitors_dir, pids_dir = sys.argv[1:]
 try:
-    raw = subprocess.run(
-        ["hyprctl", "monitors", "-j"],
-        capture_output=True, text=True, timeout=5,
-    ).stdout
-    hypr = json.loads(raw or "[]")
-except Exception:
-    hypr = []
+    proc = subprocess.run(["hyprctl", "monitors", "-j"], capture_output=True,
+                          text=True, timeout=5, check=True)
+    devices = json.loads(proc.stdout)
+    if not isinstance(devices, list): devices = []
+except (OSError, subprocess.SubprocessError, ValueError):
+    devices = []
 
-monitors = []
-for m in hypr:
-    name = m.get("name") or ""
-    if not name:
-        continue
-
+result = []
+for device in devices:
+    if not isinstance(device, dict): continue
+    name = device.get("name") or ""
+    if not isinstance(name, str) or not name or "/" in name or name in (".", "..") or "\n" in name: continue
+    assignment = os.path.join(monitors_dir, name)
     video = ""
-    path = os.path.join(monitors_dir, name)
-    if os.path.isfile(path):
-        try:
-            with open(path) as f:
-                video = f.read().strip()
-        except OSError:
-            video = ""
-
+    try:
+        if os.path.isfile(assignment) and not os.path.islink(assignment):
+            with open(assignment, encoding="utf-8") as stream: video = stream.read().strip()
+    except OSError: pass
+    available = bool(video and os.path.isfile(video) and os.access(video, os.R_OK))
     running = False
     pid_file = os.path.join(pids_dir, name + ".pid")
-    if os.path.isfile(pid_file):
-        try:
-            with open(pid_file) as f:
-                pid = int(f.read().strip())
-            with open("/proc/%d/comm" % pid) as f:
-                comm = f.read().strip()
+    try:
+        if os.path.isfile(pid_file) and not os.path.islink(pid_file):
+            with open(pid_file, encoding="ascii") as stream:
+                fields = stream.read().split()
+                pid, expected = int(fields[0]), fields[1]
+            with open(f"/proc/{pid}/comm", encoding="ascii") as stream: comm = stream.read().strip()
             os.kill(pid, 0)
-            running = comm == "mpvpaper"
-        except Exception:
-            running = False
-
-    monitors.append({
-        "name": name,
-        "description": m.get("description") or "",
-        "video": video,
-        "videoName": os.path.basename(video) if video else "",
-        "running": running,
-    })
-
-print(json.dumps({
-    "monitors": monitors,
-    "active": sum(1 for m in monitors if m["running"]),
-    "total": len(monitors),
-}))
+            with open(f"/proc/{pid}/stat", encoding="ascii") as stream:
+                stat = stream.read()
+            actual = stat[stat.rfind(")") + 2:].split()[19]
+            running = comm == "mpvpaper" and actual == expected
+    except (OSError, ValueError, IndexError, TypeError): pass
+    result.append({"name": name, "description": device.get("description") or "",
+                   "video": video, "videoName": os.path.basename(video) if video else "",
+                   "available": available, "running": running})
+print(json.dumps({"monitors": result,
+                  "active": sum(bool(m["running"]) for m in result),
+                  "total": len(result)}))
 PY
 }
 
 status_text() {
-  python3 - "$MONITORS_DIR" "$PIDS_DIR" <<'PY'
-import json, os, subprocess, sys
-
-monitors_dir, pids_dir = sys.argv[1], sys.argv[2]
-
+  python3 - "$SCRIPT_DIR/wallpaper-video" <<'PY'
+import json, subprocess, sys
+script = sys.argv[1]
 try:
-    raw = subprocess.run(
-        ["hyprctl", "monitors", "-j"],
-        capture_output=True, text=True, timeout=5,
-    ).stdout
-    hypr = json.loads(raw or "[]")
+    result = json.loads(subprocess.check_output([script, "status", "--json"], text=True))
 except Exception:
-    hypr = []
-
-if not hypr:
-    print("no monitors detected")
-    sys.exit(0)
-
-for m in hypr:
-    name = m.get("name") or ""
-    if not name:
-        continue
-    video = ""
-    path = os.path.join(monitors_dir, name)
-    if os.path.isfile(path):
-        try:
-            with open(path) as f:
-                video = f.read().strip()
-        except OSError:
-            video = ""
-    running = False
-    pid_file = os.path.join(pids_dir, name + ".pid")
-    if os.path.isfile(pid_file):
-        try:
-            with open(pid_file) as f:
-                pid = int(f.read().strip())
-            with open("/proc/%d/comm" % pid) as f:
-                comm = f.read().strip()
-            os.kill(pid, 0)
-            running = comm == "mpvpaper"
-        except Exception:
-            running = False
-
-    if running:
-        state = "playing (%s)" % (os.path.basename(video) if video else "?")
-    elif video:
-        state = "stopped (%s)" % os.path.basename(video)
-    else:
-        state = "no video"
-    print("%s: %s" % (name, state))
+    print("could not read wallpaper status"); raise SystemExit(1)
+if not result["monitors"]: print("no monitors detected")
+for monitor in result["monitors"]:
+    if monitor["running"]: state = "playing"
+    elif monitor["video"] and not monitor["available"]: state = "missing video"
+    elif monitor["video"]: state = "stopped"
+    else: state = "no video"
+    suffix = f" ({monitor['videoName']})" if monitor["videoName"] else ""
+    print(f"{monitor['name']}: {state}{suffix}")
 PY
 }
 
-# --- main -----------------------------------------------------------------
-
-[[ $# -ge 1 ]] || usage
-command="$1"
-shift
-
+[[ $# -gt 0 ]] || usage
+command="$1"; shift
 case "$command" in
   status)
-    if [[ "${1:-}" == "--json" ]]; then
-      status_json
-    else
-      status_text
-    fi
+    case "${1:-}" in "--json"|"") ;; *) usage ;; esac
+    if [[ "${1:-}" == "--json" ]]; then status_json; else status_text; fi
     ;;
   start)
-    if [[ $# -ge 1 ]]; then
-      start_monitor "$1"
-    else
-      start_all
-    fi
+    [[ $# -le 1 ]] || usage
+    if [[ $# -eq 1 ]]; then monitor_exists "$1" || die "unknown monitor '$1'"; start_monitor "$1"; else start_all; fi
     ;;
   stop)
-    if [[ $# -ge 1 ]]; then
-      stop_monitor "$1"
-    else
-      stop_all
-    fi
+    [[ $# -le 1 ]] || usage
+    if [[ $# -eq 1 ]]; then stop_monitor "$1"; else stop_all; fi
     ;;
   toggle)
-    if any_running; then
-      stop_all
-    else
-      start_all
-    fi
+    [[ $# -eq 0 ]] || usage
+    if any_running; then stop_all; else start_all; fi
     ;;
-  set)
-    [[ $# -eq 2 ]] || usage
-    set_video "$1" "$2"
-    ;;
-  clear)
-    [[ $# -eq 1 ]] || usage
-    clear_video "$1"
-    ;;
-  pick)
-    pick_video "${1:-all}"
-    ;;
-  *)
-    usage
-    ;;
+  set) [[ $# -eq 2 ]] || usage; set_video "$1" "$2" ;;
+  clear) [[ $# -eq 1 ]] || usage; clear_video "$1" ;;
+  pick) [[ $# -le 1 ]] || usage; pick_video "${1:-all}" ;;
+  *) usage ;;
 esac

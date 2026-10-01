@@ -11,6 +11,7 @@ Animated video wallpaper for [Omarchy](https://omarchy.org/) using [mpvpaper](ht
 - Bar icon: left-click toggles everything, right-click opens the panel
 - Panel: per-monitor pick/start/stop/clear, global on/off switch, live status
 - Videos loop automatically with no audio
+- Missing or unreadable video assignments are shown in the panel
 - Selected videos persist across reboots (post-boot hook)
 - Coexists with Omarchy's static wallpapers — `swaybg` runs underneath, theme commands keep working
 - Full theme integration: colors, fonts, and bar styling follow your Omarchy theme
@@ -111,9 +112,17 @@ top of the static wallpaper managed by `swaybg`. Stopping the animated wallpaper
 removes that layer, restoring your normal Omarchy wallpaper. Omarchy theme and
 wallpaper commands (`omarchy theme set`, `omarchy theme bg next`) are unaffected.
 
-The plugin only ever kills mpvpaper processes it started itself: each instance
-records its PID under `~/.config/wallpaper-video/pids/`, and a PID is only
-signalled after `/proc/<pid>/comm` still confirms it is mpvpaper.
+The helper only signals mpvpaper processes whose PID it recorded under
+`~/.config/wallpaper-video/pids/`, and verifies `/proc/<pid>/comm` immediately
+before signalling. Each player gets a dedicated session so its process group
+can be stopped cleanly. Monitor names are validated before they become file
+paths; assignments and PID records are written atomically with user-only
+permissions. Status polling runs while the panel is open and after actions.
+The engine is split into focused modules under `bin/lib/` for shared paths,
+monitor discovery, process ownership, and actions.
+
+`status --json` includes an `available` boolean for each monitor assignment,
+indicating whether the configured video exists and can be read.
 
 ## Layout
 

@@ -237,7 +237,13 @@ Panel {
     readonly property string description: monitor ? String(monitor.description || "") : ""
     readonly property string video: monitor ? String(monitor.video || "") : ""
     readonly property string videoName: monitor ? String(monitor.videoName || "") : ""
+    readonly property bool available: monitor ? monitor.available !== false : true
     readonly property bool isRunning: monitor ? monitor.running === true : false
+    readonly property string label: {
+      if (video) return available ? videoName : "Missing or unreadable"
+      if (description !== "") return "No video · " + description
+      return "No video chosen"
+    }
 
     width: parent ? parent.width : implicitWidth
     implicitHeight: rowBody.implicitHeight + Style.spacing.rowPaddingX
@@ -282,8 +288,8 @@ Panel {
         Text {
           textFormat: Text.PlainText
           Layout.fillWidth: true
-          text: row.video ? row.videoName : (row.description !== "" ? "No video · " + row.description : "No video chosen")
-          color: row.video ? root.dim : root.urgent
+          text: row.label
+          color: row.video && row.available ? root.dim : root.urgent
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           elide: Text.ElideRight
@@ -309,7 +315,7 @@ Panel {
         foreground: root.foreground
         fontFamily: root.fontFamily
         bordered: true
-        enabled: !service.busy
+        enabled: !service.busy && row.available
         onClicked: service.toggleMonitor(row.name, !row.isRunning)
       }
 
