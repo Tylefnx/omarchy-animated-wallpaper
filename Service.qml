@@ -17,13 +17,17 @@ Item {
   property int active: 0
   property int total: 0
   property string mode: "video"
-  property string lastError: ""
+  // Two separate error channels: a failed action must survive the status
+  // refresh that follows it, while a failed refresh is cleared by the next
+  // successful one. lastError is the view the panel renders.
+  property string actionError: ""
+  property string statusError: ""
   property string actionStatus: ""
   property bool refreshing: false
 
+  readonly property string lastError: actionError !== "" ? actionError : statusError
   readonly property bool running: active > 0
-  readonly property bool busy: statusProcess.running || syncProcess.running
-                               || actionProcess.running || pickProcess.running
+  readonly property bool busy: actionProcess.running || pickProcess.running
   readonly property int configuredCount: {
     var n = 0
     for (var i = 0; i < monitors.length; i++)
@@ -52,7 +56,7 @@ Item {
   function act(args, statusText) {
     if (actionProcess.running) return
     actionStatus = statusText || ""
-    lastError = ""
+    actionError = ""
     actionProcess.command = [root.helper].concat(args)
     actionProcess.running = true
   }
@@ -68,7 +72,7 @@ Item {
 
   function pickFor(monitor) {
     if (pickProcess.running) return
-    lastError = ""
+    actionError = ""
     actionStatus = "Choose a video for " + monitor + "…"
     pickProcess.command = [root.helper, "pick", monitor]
     pickProcess.running = true
@@ -76,7 +80,7 @@ Item {
 
   function pickImage() {
     if (pickProcess.running) return
-    lastError = ""
+    actionError = ""
     actionStatus = "Choose a static wallpaper…"
     pickProcess.command = [root.helper, "image"]
     pickProcess.running = true
@@ -86,18 +90,23 @@ Item {
     act(["clear", monitor], "Clearing " + monitor + "…")
   }
 
+  function clearError() {
+    actionError = ""
+    statusError = ""
+  }
+
   function applyStatus(raw) {
     var data = null
     try { data = JSON.parse(raw) } catch (e) { data = null }
     if (!data || !Array.isArray(data.monitors)) {
-      lastError = "wallpaper-video status returned no data"
+      statusError = "wallpaper-video status returned no data"
       return
     }
     monitors = data.monitors
     active = Number(data.active || 0)
     total = Number(data.total || 0)
     mode = String(data.mode || "video")
-    lastError = ""
+    statusError = ""
   }
 
   function elideError(text) {
@@ -148,7 +157,7 @@ Item {
     onExited: function(exitCode) {
       root.refreshing = false
       if (exitCode === 0) root.applyStatus(String(statusStdout.text || ""))
-      else root.lastError = root.elideError(String(statusStderr.text || "") || "Could not read wallpaper status")
+      else root.statusError = root.elideError(String(statusStderr.text || "") || "Could not read wallpaper status")
     }
   }
 
@@ -170,14 +179,13 @@ Item {
     onExited: function(exitCode) {
       var stderr = String(actionStderr.text || "").trim()
       if (exitCode !== 0) {
-        root.lastError = root.elideError(stderr || "wallpaper-video exited with " + exitCode)
+        root.actionError = root.elideError(stderr || "wallpaper-video exited with " + exitCode)
         root.actionStatus = ""
-        actionStatusTimer.restart()
       } else {
-        root.lastError = ""
+        root.actionError = ""
         root.actionStatus = String(root.actionStatus || "")
-        actionStatusTimer.restart()
       }
+      actionStatusTimer.restart()
       settleTimer.ticks = 0
       settleTimer.restart()
       root.refresh()
@@ -194,7 +202,7 @@ Item {
       // zenity exits 1 when the dialog is cancelled — that is not an error.
       var stderr = String(pickStderr.text || "").trim()
       if (exitCode !== 0 && exitCode !== 1)
-        root.lastError = root.elideError(stderr || "The file picker could not complete")
+        root.actionError = root.elideError(stderr || "The file picker could not complete")
       root.actionStatus = ""
       actionStatusTimer.stop()
       settleTimer.ticks = 0
