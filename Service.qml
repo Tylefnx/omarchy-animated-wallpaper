@@ -101,6 +101,10 @@ Item {
     pickProcess.running = true
   }
 
+  function setLayout(monitor, layout) {
+    act(["layout", monitor, layout], "Setting " + monitor + " to " + layout + "…")
+  }
+
   function clearFor(monitor) {
     act(["clear", monitor], "Clearing " + monitor + "…")
   }

@@ -52,7 +52,7 @@ Panel {
 
   function globalStopIndex(action) { return globalActions.indexOf(action) }
 
-  function monitorActionCount(monitor) { return monitor && monitor.video ? 4 : 2 }
+  function monitorActionCount(monitor) { return monitor && monitor.video ? 5 : 2 }
 
   function globalStopAt(index) { return { kind: "global", action: globalActions[index] || "" } }
   function monitorStopAt(row, action) { return { kind: "monitor", index: row, action: action } }
@@ -74,10 +74,11 @@ Panel {
       if (service.busy) return false
       var monitor = service.monitors[stop.index]
       if (!monitor) return false
-      // Start/Stop needs a file that is actually there; Pick and Clear never
-      // do, which is what makes them the recovery path for a broken one.
+      // Start/Stop needs a readable file. Pick, Clear and layout remain
+      // available when a saved file needs attention.
       if (stop.action === 2) return monitor.video !== "" && monitor.available !== false
       if (stop.action === 3) return monitor.video !== ""
+      if (stop.action === 4) return monitor.video !== ""
       return stop.action === 0 || stop.action === 1
     }
     return false
@@ -283,6 +284,10 @@ Panel {
     else if (stop.action === 1) service.pickWallpaper(monitor.name)
     else if (stop.action === 2) service.toggleMonitor(monitor.name, !monitor.running)
     else if (stop.action === 3) service.clearFor(monitor.name)
+    else if (stop.action === 4) {
+      var rowItem = monitorRepeater.itemAt(stop.index)
+      if (rowItem) rowItem.openLayout()
+    }
   }
 
   function scrollCursorIntoView() {
@@ -629,6 +634,7 @@ Panel {
               spacing: Style.space(6)
 
               Repeater {
+                id: monitorRepeater
                 model: service.monitors
 
                 MonitorRow {
@@ -676,134 +682,177 @@ Panel {
     }
 
     width: parent ? parent.width : implicitWidth
-    implicitHeight: rowBody.implicitHeight + Style.spacing.rowPaddingX
+    implicitHeight: rowContent.implicitHeight + Style.spacing.rowPaddingX
 
-    RowLayout {
-      id: rowBody
+    function openLayout() { layoutDropdown.open() }
+
+    Column {
+      id: rowContent
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
-      spacing: Style.space(8)
+      spacing: Style.space(4)
 
-      ColumnLayout {
-        Layout.fillWidth: true
-        spacing: Style.space(1)
+      RowLayout {
+        id: rowBody
+        width: parent.width
+        spacing: Style.space(8)
 
-        RowLayout {
+        ColumnLayout {
           Layout.fillWidth: true
-          spacing: Style.space(6)
+          spacing: Style.space(1)
+
+          RowLayout {
+            Layout.fillWidth: true
+            spacing: Style.space(6)
+
+            Text {
+              textFormat: Text.PlainText
+              Layout.fillWidth: true
+              text: row.name
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              elide: Text.ElideRight
+            }
+
+            // Theme-colored status dot instead of ▶/⏹ glyphs: those come out as
+            // emoji-colored squares in the bar font.
+            Rectangle {
+              Layout.alignment: Qt.AlignVCenter
+              width: Style.space(8)
+              height: width
+              radius: width / 2
+              color: row.isRunning ? Color.accent : root.dim
+              opacity: row.isRunning ? 1 : 0.5
+            }
+          }
 
           Text {
             textFormat: Text.PlainText
             Layout.fillWidth: true
-            text: row.name
-            color: root.foreground
+            text: row.label
+            color: row.video && row.available ? root.dim : root.urgent
             font.family: root.fontFamily
-            font.pixelSize: Style.font.body
+            font.pixelSize: Style.font.caption
             elide: Text.ElideRight
           }
 
-          // Theme-colored status dot instead of ▶/⏹ glyphs: those come out as
-          // emoji-colored squares in the bar font.
-          Rectangle {
-            Layout.alignment: Qt.AlignVCenter
-            width: Style.space(8)
-            height: width
-            radius: width / 2
-            color: row.isRunning ? Color.accent : root.dim
-            opacity: row.isRunning ? 1 : 0.5
+          // Recovery path for a file that has gone away: Pick and Clear both
+          // stay enabled, so say so instead of leaving a dead Start button as
+          // the only thing to look at.
+          Text {
+            visible: row.video !== "" && !row.available
+            textFormat: Text.PlainText
+            Layout.fillWidth: true
+            text: "Choose a new image or video for this monitor, or Clear the assignment."
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
           }
         }
 
-        Text {
-          textFormat: Text.PlainText
-          Layout.fillWidth: true
-          text: row.label
-          color: row.video && row.available ? root.dim : root.urgent
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          elide: Text.ElideRight
+        Button {
+          id: pickButton
+          text: "Pick"
+          tooltipText: "Choose a video for " + row.name
+          fontSize: Style.font.caption
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          bordered: true
+          enabled: !service.busy
+          opacity: enabled ? 1 : 0.45
+          hasCursor: root.monitorHasCursor(row.rowIndex, 0)
+          onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 0) }
+          onHasCursorChanged: if (hasCursor) root.cursorItem = pickButton
+          onClicked: service.pickFor(row.name)
         }
 
-        // Recovery path for a file that has gone away: Pick and Clear both
-        // stay enabled, so say so instead of leaving a dead Start button as
-        // the only thing to look at.
+        Button {
+          id: wallpaperButton
+          text: "Image"
+          tooltipText: "Choose a static wallpaper for " + row.name
+          fontSize: Style.font.caption
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          bordered: true
+          enabled: !service.busy
+          opacity: enabled ? 1 : 0.45
+          hasCursor: root.monitorHasCursor(row.rowIndex, 1)
+          onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 1) }
+          onHasCursorChanged: if (hasCursor) root.cursorItem = wallpaperButton
+          onClicked: service.pickWallpaper(row.name)
+        }
+
+        Button {
+          id: toggleButton
+          visible: row.video !== ""
+          text: row.isRunning ? "Stop" : "Start"
+          tooltipText: (row.isRunning ? "Stop" : "Start") + " the wallpaper on " + row.name
+          fontSize: Style.font.caption
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          bordered: true
+          enabled: !service.busy && row.available
+          opacity: enabled ? 1 : 0.45
+          hasCursor: root.monitorHasCursor(row.rowIndex, 2)
+          onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 2) }
+          onHasCursorChanged: if (hasCursor) root.cursorItem = toggleButton
+          onClicked: service.toggleMonitor(row.name, !row.isRunning)
+        }
+
+        Button {
+          id: clearButton
+          visible: row.video !== ""
+          text: "Clear"
+          tooltipText: "Remove the assigned wallpaper"
+          fontSize: Style.font.caption
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          bordered: true
+          enabled: !service.busy
+          opacity: enabled ? 1 : 0.45
+          hasCursor: root.monitorHasCursor(row.rowIndex, 3)
+          onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 3) }
+          onHasCursorChanged: if (hasCursor) root.cursorItem = clearButton
+          onClicked: service.clearFor(row.name)
+        }
+      }
+
+      RowLayout {
+        visible: row.video !== ""
+        width: parent.width
+        spacing: Style.space(8)
+
         Text {
-          visible: row.video !== "" && !row.available
-          textFormat: Text.PlainText
-          Layout.fillWidth: true
-          text: "Choose a new image or video for this monitor, or Clear the assignment."
+          text: "Scaling"
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
-          wrapMode: Text.WordWrap
+          Layout.fillWidth: true
         }
-      }
 
-      Button {
-        id: pickButton
-        text: "Pick"
-        tooltipText: "Choose a video for " + row.name
-        fontSize: Style.font.caption
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        bordered: true
-        enabled: !service.busy
-        opacity: enabled ? 1 : 0.45
-        hasCursor: root.monitorHasCursor(row.rowIndex, 0)
-        onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 0) }
-        onHasCursorChanged: if (hasCursor) root.cursorItem = pickButton
-        onClicked: service.pickFor(row.name)
-      }
-
-      Button {
-        id: wallpaperButton
-        text: "Image"
-        tooltipText: "Choose a static wallpaper for " + row.name
-        fontSize: Style.font.caption
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        bordered: true
-        enabled: !service.busy
-        opacity: enabled ? 1 : 0.45
-        hasCursor: root.monitorHasCursor(row.rowIndex, 1)
-        onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 1) }
-        onHasCursorChanged: if (hasCursor) root.cursorItem = wallpaperButton
-        onClicked: service.pickWallpaper(row.name)
-      }
-
-      Button {
-        id: toggleButton
-        visible: row.video !== ""
-        text: row.isRunning ? "Stop" : "Start"
-        tooltipText: (row.isRunning ? "Stop" : "Start") + " the wallpaper on " + row.name
-        fontSize: Style.font.caption
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        bordered: true
-        enabled: !service.busy && row.available
-        opacity: enabled ? 1 : 0.45
-        hasCursor: root.monitorHasCursor(row.rowIndex, 2)
-        onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 2) }
-        onHasCursorChanged: if (hasCursor) root.cursorItem = toggleButton
-        onClicked: service.toggleMonitor(row.name, !row.isRunning)
-      }
-
-      Button {
-        id: clearButton
-        visible: row.video !== ""
-        text: "Clear"
-        tooltipText: "Remove the assigned wallpaper"
-        fontSize: Style.font.caption
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        bordered: true
-        enabled: !service.busy
-        opacity: enabled ? 1 : 0.45
-        hasCursor: root.monitorHasCursor(row.rowIndex, 3)
-        onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 3) }
-        onHasCursorChanged: if (hasCursor) root.cursorItem = clearButton
-        onClicked: service.clearFor(row.name)
+        Dropdown {
+          id: layoutDropdown
+          Layout.preferredWidth: Style.spacing.dropdownWidth
+          enabled: !service.busy
+          opacity: enabled ? 1 : 0.45
+          showLabel: false
+          value: String(row.monitor.layout || "fill")
+          options: [
+            { value: "fill", label: "Fill" },
+            { value: "fit", label: "Fit" },
+            { value: "stretch", label: "Stretch" },
+            { value: "center", label: "Center" }
+          ]
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          hasCursor: root.monitorHasCursor(row.rowIndex, 4)
+          onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 4) }
+          onHasCursorChanged: if (hasCursor) root.cursorItem = layoutDropdown
+          onChanged: function(value) { service.setLayout(row.name, value) }
+        }
       }
     }
   }
