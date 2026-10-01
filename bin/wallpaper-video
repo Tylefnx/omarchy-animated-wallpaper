@@ -19,15 +19,17 @@ Usage: wallpaper-video <command> [args]
   set <monitor|all> <file>     Assign a readable video
   clear <monitor|all>          Clear an assignment
   pick [monitor]               Choose a video with zenity
+  image [file]                 Choose or apply a static Omarchy background
+  reconcile                    Stop video players after an Omarchy background change
 EOF
   exit 1
 }
 
 status_json() {
-  python3 - "$MONITORS_DIR" "$PIDS_DIR" <<'PY'
+  python3 - "$MONITORS_DIR" "$PIDS_DIR" "$(wallpaper_mode)" <<'PY'
 import json, os, subprocess, sys
 
-monitors_dir, pids_dir = sys.argv[1:]
+monitors_dir, pids_dir, mode = sys.argv[1:]
 try:
     proc = subprocess.run(["hyprctl", "monitors", "-j"], capture_output=True,
                           text=True, timeout=5, check=True)
@@ -67,7 +69,7 @@ for device in devices:
                    "available": available, "running": running})
 print(json.dumps({"monitors": result,
                   "active": sum(bool(m["running"]) for m in result),
-                  "total": len(result)}))
+                  "total": len(result), "mode": mode}))
 PY
 }
 
@@ -80,6 +82,8 @@ try:
 except Exception:
     print("could not read wallpaper status"); raise SystemExit(1)
 if not result["monitors"]: print("no monitors detected")
+if result["mode"] == "image": print("static wallpaper active")
+elif result["mode"] == "off": print("wallpaper playback disabled")
 for monitor in result["monitors"]:
     if monitor["running"]: state = "playing"
     elif monitor["video"] and not monitor["available"]: state = "missing video"
@@ -99,7 +103,14 @@ case "$command" in
     ;;
   start)
     [[ $# -le 1 ]] || usage
-    if [[ $# -eq 1 ]]; then monitor_exists "$1" || die "unknown monitor '$1'"; start_monitor "$1"; else start_all; fi
+    if [[ "${1:-}" == "--restore" ]]; then
+      reconcile_background
+      [[ "$(wallpaper_mode)" == video ]] || exit 0
+    else
+      atomic_write "$MODE_FILE" video
+      capture_background
+    fi
+    if [[ $# -eq 1 && "$1" != "--restore" ]]; then monitor_exists "$1" || die "unknown monitor '$1'"; start_monitor "$1"; else start_all; fi
     ;;
   stop)
     [[ $# -le 1 ]] || usage
@@ -112,5 +123,10 @@ case "$command" in
   set) [[ $# -eq 2 ]] || usage; set_video "$1" "$2" ;;
   clear) [[ $# -eq 1 ]] || usage; clear_video "$1" ;;
   pick) [[ $# -le 1 ]] || usage; pick_video "${1:-all}" ;;
+  image)
+    [[ $# -le 1 ]] || usage
+    if [[ $# -eq 1 ]]; then apply_image "$1"; else pick_image; fi
+    ;;
+  reconcile) [[ $# -eq 0 ]] || usage; reconcile_background ;;
   *) usage ;;
 esac

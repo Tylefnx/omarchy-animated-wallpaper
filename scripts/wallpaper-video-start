@@ -8,4 +8,4 @@ HELPER="$HOME/.config/omarchy/plugins/r4venward.wallpaper-video/bin/wallpaper-vi
 # Let the compositor and its layer-shell surfaces settle first.
 sleep 2
 
-"$HELPER" start >/dev/null 2>&1 || true
+"$HELPER" start --restore >/dev/null 2>&1 || true

@@ -45,6 +45,7 @@ Panel {
 
   readonly property string heroMeta: {
     if (service.total === 0) return "No monitors detected"
+    if (service.mode === "image") return "Static wallpaper"
     if (service.running) {
       var playing = ""
       for (var i = 0; i < service.monitors.length; i++) {
@@ -60,7 +61,7 @@ Panel {
   implicitHeight: button.implicitHeight
 
   onOpenedChanged: if (opened) {
-    service.refresh()
+    service.syncBackground()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -80,6 +81,7 @@ Panel {
     function start(): string { service.startAll(); return "ok" }
     function stop(): string { service.stopAll(); return "ok" }
     function pick(monitor: string): string { service.pickFor(String(monitor || "all")); return "ok" }
+    function image(): string { service.pickImage(); return "ok" }
   }
 
   WidgetButton {
@@ -166,6 +168,18 @@ Panel {
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             wrapMode: Text.WordWrap
+          }
+
+          Button {
+            width: parent.width
+            text: "Choose static image…"
+            tooltipText: "Apply an Omarchy background and stop active video layers"
+            fontSize: Style.font.caption
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            bordered: true
+            enabled: !service.busy
+            onClicked: service.pickImage()
           }
 
           Text {

@@ -1,5 +1,16 @@
 #!/bin/bash
 
+MPVPAPER_AUTO_PAUSE_SUPPORTED=""
+
+ensure_auto_pause_support() {
+  [[ -n "$MPVPAPER_AUTO_PAUSE_SUPPORTED" ]] && return 0
+  if mpvpaper --help 2>&1 | grep -q -- '--auto-pause'; then
+    MPVPAPER_AUTO_PAUSE_SUPPORTED=1
+  else
+    die "installed mpvpaper does not support --auto-pause; update mpvpaper"
+  fi
+}
+
 start_monitor() {
   local monitor="$1" assignment video pid started
   assignment=$(monitor_file "$monitor")
@@ -7,10 +18,11 @@ start_monitor() {
   video=$(<"$assignment")
   [[ -n "$video" && -f "$video" && -r "$video" ]] || return 1
   command -v mpvpaper >/dev/null 2>&1 || die "mpvpaper is not installed"
+  ensure_auto_pause_support
   stop_monitor "$monitor"
   mkdir -p -m 700 -- "$PIDS_DIR" || die "cannot create process state directory"
   command -v setsid >/dev/null 2>&1 || die "setsid is not installed"
-  setsid mpvpaper -o "no-audio loop" "$monitor" "$video" >/dev/null 2>&1 &
+  setsid mpvpaper --auto-pause -o "no-audio loop" "$monitor" "$video" >/dev/null 2>&1 &
   pid=$!
   started=""
   for _ in {1..20}; do
@@ -60,14 +72,16 @@ set_video() {
     owned_pid_is_running "$pid" "$started" && was_target_running=true
   fi
   if [[ "$monitor" == all ]]; then
-    local assigned=0
-    while IFS= read -r m; do atomic_write "$(monitor_file "$m")" "$video"; done < <(monitor_names)
-    while IFS= read -r m; do (( assigned += 1 )); done < <(monitor_names)
-    (( assigned > 0 )) || die "no monitors detected"
+    local -a names=()
+    mapfile -t names < <(monitor_names)
+    (( ${#names[@]} > 0 )) || die "no monitors detected"
+    for m in "${names[@]}"; do atomic_write "$(monitor_file "$m")" "$video"; done
   else
     target=$(monitor_file "$monitor")
     atomic_write "$target" "$video"
   fi
+  atomic_write "$MODE_FILE" video
+  capture_background
   if [[ "$monitor" == all && "$was_running" == true ]]; then stop_all; start_all
   elif [[ "$monitor" != all && "$was_target_running" == true ]]; then stop_monitor "$monitor"; start_monitor "$monitor"; fi
 }
@@ -83,6 +97,7 @@ clear_video() {
     local assignment
     for assignment in "$MONITORS_DIR"/*; do [[ -L "$assignment" ]] || rm -f -- "$assignment"; done
     shopt -u nullglob
+    atomic_write "$MODE_FILE" off
   else
     stop_monitor "$monitor"
     target=$(monitor_file "$monitor")
@@ -98,4 +113,44 @@ pick_video() {
     --file-filter="Videos | *.mp4 *.webm *.mkv *.avi *.mov *.gif *.MP4 *.WEBM *.MKV" 2>/dev/null) || true
   [[ -n "$video" ]] || return 0
   set_video "$monitor" "$video"
+}
+
+valid_image() {
+  [[ -f "$1" && -r "$1" && "$1" != *$'\n'* ]] || return 1
+  case "${1,,}" in *.png|*.jpg|*.jpeg|*.webp|*.avif|*.bmp) return 0 ;; *) return 1 ;; esac
+}
+
+apply_image() {
+  local image="$1"
+  valid_image "$image" || die "choose a readable PNG, JPEG, WebP, AVIF, or BMP image"
+  image=$(realpath -e -- "$image") || die "cannot resolve image path"
+  command -v omarchy-theme-bg-set >/dev/null 2>&1 || die "omarchy-theme-bg-set is not available"
+  omarchy-theme-bg-set "$image" || die "Omarchy could not apply the selected image"
+  stop_all
+  atomic_write "$MODE_FILE" image
+  capture_background
+}
+
+pick_image() {
+  local image
+  command -v zenity >/dev/null 2>&1 || die "zenity is not installed"
+  image=$(zenity --file-selection --title="Choose a static wallpaper" \
+    --file-filter="Images | *.png *.jpg *.jpeg *.webp *.avif *.bmp *.PNG *.JPG *.JPEG *.WEBP *.AVIF *.BMP" 2>/dev/null) || true
+  [[ -n "$image" ]] || return 0
+  apply_image "$image"
+}
+
+reconcile_background() {
+  local current recorded mode
+  current=$(current_background) || return 0
+  mode=$(wallpaper_mode)
+  [[ "$mode" == video ]] || return 0
+  if [[ ! -f "$BACKGROUND_FILE" || -L "$BACKGROUND_FILE" ]]; then
+    atomic_write "$BACKGROUND_FILE" "$current"
+    return 0
+  fi
+  IFS= read -r recorded <"$BACKGROUND_FILE" || recorded=""
+  [[ -n "$recorded" && "$recorded" != "$current" ]] || return 0
+  stop_all
+  atomic_write "$MODE_FILE" image
 }

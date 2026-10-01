@@ -4,6 +4,8 @@
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/wallpaper-video"
 MONITORS_DIR="$CONFIG_DIR/monitors"
 PIDS_DIR="$CONFIG_DIR/pids"
+MODE_FILE="$CONFIG_DIR/mode"
+BACKGROUND_FILE="$CONFIG_DIR/background"
 
 die() { printf 'wallpaper-video: %s\n' "$*" >&2; exit 1; }
 
@@ -34,4 +36,23 @@ atomic_write() {
     rm -f -- "$temporary"
     die "cannot save configuration"
   fi
+}
+
+wallpaper_mode() {
+  local value
+  [[ -f "$MODE_FILE" && ! -L "$MODE_FILE" ]] || { printf 'video'; return; }
+  IFS= read -r value <"$MODE_FILE" || value="video"
+  case "$value" in video|image|off) printf '%s' "$value" ;; *) printf 'video' ;; esac
+}
+
+current_background() {
+  local link="$HOME/.local/state/omarchy/current/background"
+  [[ -e "$link" ]] || return 1
+  readlink -f -- "$link" 2>/dev/null
+}
+
+capture_background() {
+  local path
+  path=$(current_background) || return 0
+  atomic_write "$BACKGROUND_FILE" "$path"
 }

@@ -41,6 +41,10 @@ if ! command -v mpvpaper &>/dev/null; then
   echo -e "  $ERR mpvpaper is not installed. Install it with: yay -S mpvpaper"
   exit 1
 fi
+if ! mpvpaper --help 2>&1 | grep -q -- '--auto-pause'; then
+  echo -e "  $ERR installed mpvpaper does not support --auto-pause; update mpvpaper first"
+  exit 1
+fi
 echo -e "  $OK mpvpaper found"
 
 if ! command -v zenity &>/dev/null; then

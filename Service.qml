@@ -16,12 +16,14 @@ Item {
   property var monitors: []
   property int active: 0
   property int total: 0
+  property string mode: "video"
   property string lastError: ""
   property string actionStatus: ""
   property bool refreshing: false
 
   readonly property bool running: active > 0
-  readonly property bool busy: statusProcess.running || actionProcess.running || pickProcess.running
+  readonly property bool busy: statusProcess.running || syncProcess.running
+                               || actionProcess.running || pickProcess.running
   readonly property int configuredCount: {
     var n = 0
     for (var i = 0; i < monitors.length; i++)
@@ -39,6 +41,12 @@ Item {
     refreshing = true
     statusProcess.command = [root.helper, "status", "--json"]
     statusProcess.running = true
+  }
+
+  function syncBackground() {
+    if (syncProcess.running || statusProcess.running || actionProcess.running || pickProcess.running) return
+    syncProcess.command = [root.helper, "reconcile"]
+    syncProcess.running = true
   }
 
   function act(args, statusText) {
@@ -66,6 +74,14 @@ Item {
     pickProcess.running = true
   }
 
+  function pickImage() {
+    if (pickProcess.running) return
+    lastError = ""
+    actionStatus = "Choose a static wallpaper…"
+    pickProcess.command = [root.helper, "image"]
+    pickProcess.running = true
+  }
+
   function clearFor(monitor) {
     act(["clear", monitor], "Clearing " + monitor + "…")
   }
@@ -80,6 +96,7 @@ Item {
     monitors = data.monitors
     active = Number(data.active || 0)
     total = Number(data.total || 0)
+    mode = String(data.mode || "video")
     lastError = ""
   }
 
@@ -93,7 +110,7 @@ Item {
     repeat: true
     running: true
     triggeredOnStart: true
-    onTriggered: root.refresh()
+    onTriggered: root.syncBackground()
   }
 
   Timer {
@@ -133,6 +150,15 @@ Item {
       if (exitCode === 0) root.applyStatus(String(statusStdout.text || ""))
       else root.lastError = root.elideError(String(statusStderr.text || "") || "Could not read wallpaper status")
     }
+  }
+
+  Process {
+    id: syncProcess
+    running: false
+    command: []
+    stdout: StdioCollector { waitForEnd: true }
+    stderr: StdioCollector { waitForEnd: true }
+    onExited: root.refresh()
   }
 
   Process {
