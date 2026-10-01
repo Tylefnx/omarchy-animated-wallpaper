@@ -158,6 +158,14 @@ else
   bad "Panel: the fix-it hint is computed but never shown"
 fi
 
+enabled_buttons=$(grep -c '^[[:space:]]*enabled: !service.busy' "$PANEL")
+dimmed_buttons=$(grep -c 'opacity: enabled ? 1 : 0.45' "$PANEL")
+if [ "$enabled_buttons" -gt 0 ] && [ "$enabled_buttons" -eq "$dimmed_buttons" ]; then
+  ok "Panel: every button that can go disabled is dimmed while it cannot act"
+else
+  bad "Panel: $enabled_buttons buttons can be disabled but only $dimmed_buttons of them are dimmed"
+fi
+
 if grep -q 'exitCode !== 0 && exitCode !== 1' "$SERVICE"; then
   bad "Service: the picker reads exit 1 as a cancelled dialog, hiding every die() it can report"
 else

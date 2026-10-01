@@ -561,6 +561,7 @@ Panel {
             fontFamily: root.fontFamily
             bordered: true
             enabled: !service.busy
+            opacity: enabled ? 1 : 0.45
             hasCursor: root.globalHasCursor("choose")
             onHovered: function(isHovered) { if (isHovered) root.hoverGlobal("choose") }
             onHasCursorChanged: if (hasCursor) root.cursorItem = ctaButton
@@ -581,6 +582,7 @@ Panel {
               fontFamily: root.fontFamily
               bordered: true
               enabled: !service.busy
+              opacity: enabled ? 1 : 0.45
               hasCursor: root.globalHasCursor("image")
               onHovered: function(isHovered) { if (isHovered) root.hoverGlobal("image") }
               onHasCursorChanged: if (hasCursor) root.cursorItem = imageButton
@@ -745,6 +747,7 @@ Panel {
         fontFamily: root.fontFamily
         bordered: true
         enabled: !service.busy
+        opacity: enabled ? 1 : 0.45
         hasCursor: root.monitorHasCursor(row.rowIndex, 0)
         onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 0) }
         onHasCursorChanged: if (hasCursor) root.cursorItem = pickButton
@@ -761,6 +764,7 @@ Panel {
         fontFamily: root.fontFamily
         bordered: true
         enabled: !service.busy && row.available
+        opacity: enabled ? 1 : 0.45
         hasCursor: root.monitorHasCursor(row.rowIndex, 1)
         onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 1) }
         onHasCursorChanged: if (hasCursor) root.cursorItem = toggleButton
@@ -777,6 +781,7 @@ Panel {
         fontFamily: root.fontFamily
         bordered: true
         enabled: !service.busy
+        opacity: enabled ? 1 : 0.45
         hasCursor: root.monitorHasCursor(row.rowIndex, 2)
         onHovered: function(isHovered) { if (isHovered) root.hoverMonitor(row.rowIndex, 2) }
         onHasCursorChanged: if (hasCursor) root.cursorItem = clearButton
