@@ -49,6 +49,9 @@ Item {
       required property var modelData
       screen: modelData
       visible: root.service.previewPath !== "" && modelData.name === root.service.previewMonitor
+      readonly property real previewScale: Math.min(
+        previewFrame.width / Math.max(screen.width, 1),
+        previewFrame.height / Math.max(screen.height, 1))
       anchors { top: true; bottom: true; left: true; right: true }
       color: "transparent"
       exclusionMode: ExclusionMode.Ignore
@@ -145,7 +148,13 @@ Item {
 
               Image {
                 id: previewImage
-                anchors.fill: parent
+                anchors.centerIn: parent
+                width: root.selectedLayout === "center"
+                  ? (sourceSize.width > 0 ? sourceSize.width * previewWindow.previewScale : parent.width * 0.5)
+                  : parent.width
+                height: root.selectedLayout === "center"
+                  ? (sourceSize.height > 0 ? sourceSize.height * previewWindow.previewScale : parent.height * 0.5)
+                  : parent.height
                 visible: !root.isVideo && !root.isGif
                 source: visible ? root.previewUrl : ""
                 asynchronous: true
@@ -156,7 +165,13 @@ Item {
               }
 
               AnimatedImage {
-                anchors.fill: parent
+                anchors.centerIn: parent
+                width: root.selectedLayout === "center"
+                  ? (sourceSize.width > 0 ? sourceSize.width * previewWindow.previewScale : parent.width * 0.5)
+                  : parent.width
+                height: root.selectedLayout === "center"
+                  ? (sourceSize.height > 0 ? sourceSize.height * previewWindow.previewScale : parent.height * 0.5)
+                  : parent.height
                 visible: root.isGif
                 source: visible ? root.previewUrl : ""
                 asynchronous: true
@@ -169,7 +184,12 @@ Item {
 
               VideoOutput {
                 id: previewVideoOutput
-                anchors.fill: parent
+                anchors.centerIn: parent
+                readonly property var sourceResolution: previewPlayer.metaData.value(MediaMetaData.Resolution)
+                width: root.selectedLayout === "center" && sourceResolution && sourceResolution.width > 0
+                  ? sourceResolution.width * previewWindow.previewScale : parent.width
+                height: root.selectedLayout === "center" && sourceResolution && sourceResolution.height > 0
+                  ? sourceResolution.height * previewWindow.previewScale : parent.height
                 visible: root.isVideo
                 fillMode: root.selectedLayout === "fill" ? VideoOutput.PreserveAspectCrop
                   : root.selectedLayout === "stretch" ? VideoOutput.Stretch
