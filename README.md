@@ -7,18 +7,18 @@ Animated video wallpaper for [Omarchy](https://omarchy.org/) using [mpvpaper](ht
 ## Features
 
 - Play any video (MP4, WebM, MKV, GIF...) as your desktop wallpaper
-- **Per-monitor support** — assign a different video to each screen
+- **Per-monitor support** — assign a different video or static image to each screen
 - Bar icon: left-click toggles everything, right-click opens the panel
-- Panel: per-monitor pick/start/stop/clear, global on/off switch, live status
+- Panel: per-monitor video/image pick, start/stop/clear, global on/off switch, live status
 - Videos loop automatically with no audio
 - Videos automatically pause while the compositor hides the wallpaper, reducing idle CPU use
-- Apply a static image through Omarchy without deleting saved per-monitor video assignments
+- Choose per-monitor static images with Omarchy's visual image picker without changing the global Omarchy background
 - Missing or unreadable video assignments are shown in the panel
 - Failures are reported where you are: in the panel with a Dismiss action, in
   the bar icon via the urgent tint, and from the post-boot hook as a
   notification
 - Fully keyboard navigable panel (arrows to move, Enter to run, Esc to close)
-- Selected videos persist across reboots (post-boot hook)
+- Selected images and videos persist across reboots (post-boot hook)
 - Coexists with Omarchy's static wallpapers — `swaybg` runs underneath, theme commands keep working
 - Full theme integration: colors, fonts, and bar styling follow your Omarchy theme
 
@@ -27,14 +27,16 @@ Animated video wallpaper for [Omarchy](https://omarchy.org/) using [mpvpaper](ht
 - [Omarchy](https://omarchy.org/) (Arch Linux + Hyprland, Quickshell shell)
 - `mpvpaper` — `yay -S mpvpaper`
 - `mpvpaper` must include the `--auto-pause` and `--auto-mode` options
-- `zenity` — usually pre-installed on Omarchy
+- `zenity` — used for video file selection; usually pre-installed on Omarchy
 
 The installer checks for these tools but does not install system packages: each
 missing dependency is reported with what to do about it — usually the exact
 command to run yourself (for example `sudo pacman -S zenity`,
 `sudo pacman -S jq`, `sudo pacman -S python`). It also verifies that `omarchy`
 and `hyprctl` are present and that mpvpaper supports both options. Static
-images use Omarchy's `omarchy-theme-bg-set` command.
+per-monitor wallpaper selection uses Omarchy's own visual image picker. The
+selected image is displayed only on the monitor whose row opened the picker;
+Omarchy's global background remains unchanged.
 
 ## Install
 
@@ -124,7 +126,7 @@ suggestion above, which you run yourself if needed.
 | Install | Checks for `mpvpaper`, `zenity`, and Omarchy. `install.sh --local` mirrors this checkout over the plugin folder after confirming the folder is this plugin's own; regular installation asks Omarchy to add the declared Git repository, moving a non-Git copy aside as a backup first. | `~/.config/omarchy/plugins/r4venward.wallpaper-video/` |
 | Bar and startup | Uses Omarchy commands to enable/place the plugin and register the selected post-boot hook. | Omarchy-managed plugin/bar entry and `~/.config/omarchy/hooks/post-boot.d/wallpaper-video-start` |
 | Wallpaper state | Saves each monitor's selected video path, PID/start-time records, the selected image/video mode, and the base image used when videos start. | `${XDG_CONFIG_HOME:-~/.config}/wallpaper-video/` |
-| Runtime commands | Reads monitor names from `hyprctl`; launches `mpvpaper`; opens `zenity` only when you choose a file; applies a chosen image with `omarchy-theme-bg-set`; the post-boot hook notifies if a saved wallpaper cannot start. | Current user session, selected local media, and `~/.local/state/omarchy/current/background` |
+| Runtime commands | Reads monitor names from `hyprctl`; launches `mpvpaper`; opens `zenity` for video selection; opens Omarchy's visual image picker for per-monitor static selection; uses `omarchy-theme-bg-set` only for the global `image` command; the post-boot hook notifies if a saved wallpaper cannot start. | Current user session, selected local media, and `~/.local/state/omarchy/current/background` |
 | Stop and cleanup | Stops only a recorded PID that still identifies as `mpvpaper` with the same process start time. Uninstall removes this plugin and its Omarchy hook; your wallpaper state is kept unless you pass `--purge`. | The plugin's own processes and paths listed above |
 
 The helper does not kill arbitrary `mpvpaper` processes, edit theme files, or
@@ -147,12 +149,12 @@ the plugin.
 ### Panel
 
 - **Toggle switch** in the header turns everything on/off
-- **Choose static image** applies an image with Omarchy and stops active videos
-  without clearing their assignments; **Refresh** re-reads state at any time,
-  even while a command runs
-- Each monitor row shows its assigned video (or `No video`) and lets you
-  **Pick** a new video, **Start/Stop** that screen alone, or **Clear** the
-  assignment
+- **Refresh** re-reads state at any time, even while a command runs
+- Each monitor row shows its assigned image or video (or `No wallpaper`) and
+  lets you **Pick** a video, choose an **Image** from Omarchy's visual picker,
+  **Start/Stop** that screen alone, or **Clear** its assignment. The Image
+  action opens the same Omarchy picker but applies the result only to that row's
+  monitor.
 - With nothing assigned yet, **Choose video for a monitor…** picks one file and
   assigns it to every monitor
 - A failed command stays visible with a **Dismiss** action instead of
@@ -200,7 +202,8 @@ The engine script is also usable on its own:
 | `wallpaper-video set <monitor\|all> <file>` | Assign a video |
 | `wallpaper-video clear <monitor\|all>` | Remove an assignment |
 | `wallpaper-video pick [monitor]` | File picker (zenity) |
-| `wallpaper-video image [file]` | Choose or apply a static image through Omarchy |
+| `wallpaper-video wallpaper <monitor>` | Choose a static image from Omarchy's picker for one monitor |
+| `wallpaper-video image [file]` | Apply a static image as Omarchy's global background |
 | `wallpaper-video reconcile` | Stop videos when Omarchy's base image changes |
 
 The script lives inside the plugin folder:
@@ -220,18 +223,21 @@ omarchy-shell r4venward.wallpaper-video snapshot  # JSON: what the panel would r
 
 ## How it works
 
-mpvpaper renders a video directly on the Wayland layer below your windows, on
-top of the static wallpaper managed by `swaybg`. Stopping the animated wallpaper
-removes that layer, restoring your normal Omarchy wallpaper. Omarchy theme and
-wallpaper commands (`omarchy theme set`, `omarchy theme bg next`) are unaffected.
+mpvpaper renders assigned videos and still images directly on the Wayland layer
+below your windows, on top of the static wallpaper managed by `swaybg`. Stopping
+the animated wallpaper removes that layer, restoring your normal Omarchy
+wallpaper. Omarchy theme and global wallpaper commands (`omarchy theme set`,
+`omarchy theme bg next`) are unaffected.
 mpvpaper runs with `--auto-pause -a MAX`, so playback pauses while a
 fullscreen or maximized window covers the screen and resumes as soon as the
 desktop is visible again — no process is killed in the process. Choosing a
-static image calls Omarchy's background setter, stops active video layers, and
-remembers not to restore them at the next login; choosing or starting a video
-switches back to video mode. If another Omarchy background command changes the
-active image while videos are running, the plugin stops those layers and leaves
-the new static image visible.
+The per-monitor Image action opens Omarchy's native image-grid selector with the
+current monitor assignment preselected, then starts an mpvpaper still-image
+layer on that output only. It uses the same theme and user wallpaper folders as
+Omarchy's global wallpaper switcher, while leaving the global background alone.
+Choosing a global background through Omarchy still stops plugin layers; choosing
+or starting an image or video in a monitor row enables the per-monitor layers
+again and restores them after login.
 
 The helper only signals mpvpaper processes whose PID it recorded under
 `~/.config/wallpaper-video/pids/`, and verifies `/proc/<pid>/comm` immediately
