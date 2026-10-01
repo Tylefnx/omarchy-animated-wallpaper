@@ -237,6 +237,9 @@ The per-monitor Image action opens Omarchy's native image-grid selector with the
 current monitor assignment preselected, then starts an mpvpaper still-image
 layer on that output only. It uses the same theme and user wallpaper folders as
 Omarchy's global wallpaper switcher, while leaving the global background alone.
+The mpvpaper path uses EWA Lanczos for upscaling and Mitchell for downscaling
+when the source and monitor resolutions differ. This improves resampling but
+cannot restore detail missing from the source file.
 Choosing a global background through Omarchy still stops plugin layers; choosing
 or starting an image or video in a monitor row enables the per-monitor layers
 again and restores them after login.

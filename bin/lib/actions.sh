@@ -51,8 +51,12 @@ start_monitor() {
   stop_monitor "$monitor"
   mkdir -p -m 700 -- "$PIDS_DIR" || die "cannot create process state directory"
   command -v setsid >/dev/null 2>&1 || die "setsid is not installed"
-  mpv_options="no-audio loop"
-  if valid_image "$video"; then mpv_options="no-audio image-display-duration=inf"; fi
+  # Use high-quality resampling when the source and output dimensions differ.
+  # Mitchell is a balanced downscaler; EWA Lanczos is sharper when upscaling.
+  mpv_options="no-audio loop scale=ewa_lanczossharp dscale=mitchell"
+  if valid_image "$video"; then
+    mpv_options="no-audio image-display-duration=inf scale=ewa_lanczossharp dscale=mitchell"
+  fi
   setsid mpvpaper --auto-pause -a MAX -o "$mpv_options" "$monitor" "$video" >/dev/null 2>&1 &
   pid=$!
   started=""
