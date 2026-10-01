@@ -9,6 +9,7 @@ Animated video wallpaper for [Omarchy](https://omarchy.org/) using [mpvpaper](ht
 - Play any video (MP4, WebM, MKV, GIF...) as your desktop wallpaper
 - **Per-monitor support** — assign a different video or static image to each screen
 - **Per-monitor scaling** — choose Fill, Fit, Stretch, or Center independently for each screen
+- **Live review before applying** — preview a picked video or image on its target screen, try the scaling modes, then apply or cancel
 - Bar icon: left-click toggles everything, right-click opens the panel
 - Panel: per-monitor video/image pick, start/stop/clear, global on/off switch, live status
 - Videos loop automatically with no audio
@@ -155,11 +156,13 @@ the plugin.
   command runs
 - Each monitor row shows its assigned image or video (or `No wallpaper`) and
   lets you **Pick** a video, choose an **Image** from Omarchy's visual picker,
-  **Start/Stop** that screen alone, or **Clear** its assignment. The Image
-  action opens the same Omarchy picker but applies the result only to that row's
-  monitor. Assigned wallpapers also get a **Scaling** selector: Fill crops to
-  cover, Fit preserves the whole image with bars if needed, Stretch fills the
-  screen, and Center uses source pixel size.
+  **Start/Stop** that screen alone, or **Clear** its assignment. Picking an
+  image or video opens a live review on that monitor; choose Fill, Fit, Stretch,
+  or Center there, then **Set wallpaper** or cancel. The image action uses
+  Omarchy's own image-grid picker before opening the review. Assigned wallpapers
+  also keep a **Scaling** selector in their monitor row: Fill crops to cover,
+  Fit preserves the whole image with bars if needed, Stretch fills the screen,
+  and Center uses source pixel size.
 - With nothing assigned yet, **Choose video for a monitor…** picks one file and
   assigns it to every monitor
 - A failed command stays visible with a **Dismiss** action instead of
@@ -186,6 +189,9 @@ nothing: it skips a disabled Start, skips everything except Dismiss and
 Refresh while a command is running, and Enter on such a control is refused
 rather than silently ignored.
 
+In the wallpaper review, Left/Right changes the layout, Enter applies it, and
+Escape cancels without changing the monitor.
+
 ### Settings
 
 Right-click the bar widget → settings (or `omarchy bar set`):
@@ -209,6 +215,9 @@ The engine script is also usable on its own:
 | `wallpaper-video clear <monitor\|all>` | Remove an assignment |
 | `wallpaper-video pick [monitor]` | File picker (zenity) |
 | `wallpaper-video wallpaper <monitor>` | Choose a static image from Omarchy's picker for one monitor |
+| `wallpaper-video select-video <monitor>` | Choose a video for the panel's review screen |
+| `wallpaper-video select-image <monitor>` | Choose an Omarchy image for the panel's review screen |
+| `wallpaper-video apply <monitor> <file> [layout]` | Apply a reviewed image or video and its scaling mode |
 | `wallpaper-video image [file]` | Apply a static image as Omarchy's global background |
 | `wallpaper-video reconcile` | Stop videos when Omarchy's base image changes |
 
