@@ -113,12 +113,26 @@ done
 
 if [[ -n $QMLLINT ]]; then
   ok "qmllint is Qt 6 ($("$QMLLINT" --version 2>&1 | head -1))"
-  for file in "$ROOT/Panel.qml" "$ROOT/Service.qml"; do
+  # qmllint exits 0 when a property is assigned that the type does not have,
+  # and that is precisely what blanks the bar widget: the component fails to
+  # resolve, Panel.qml cannot instantiate it, and the whole plugin widget is
+  # dropped with no icon. Warnings about the qs.* imports are expected outside
+  # Quickshell; a missing property on a type qmllint did resolve is not.
+  # Panel.qml's rowItem.openLayout() is the one deliberate exception, because
+  # Repeater.itemAt() hands back a plain QQuickItem and that call cannot be
+  # typed from outside the delegate.
+  for file in "$ROOT/Panel.qml" "$ROOT/Service.qml" "$ROOT/WallpaperPreview.qml"; do
     rel="${file#"$ROOT"/}"
-    if "$QMLLINT" "$file" >/tmp/check-qmllint.out 2>&1; then
-      ok "qmllint $rel parses (warnings about qs.* imports are expected outside Quickshell)"
-    else
+    if ! "$QMLLINT" "$file" >/tmp/check-qmllint.out 2>&1; then
       bad "qmllint $rel: $(tr '\n' ' ' </tmp/check-qmllint.out)"
+      continue
+    fi
+    unresolvable=$(grep '\[missing-property\]' /tmp/check-qmllint.out \
+      | grep -v 'Member "openLayout" not found' || true)
+    if [[ -z $unresolvable ]]; then
+      ok "qmllint $rel resolves every property it assigns (warnings about qs.* imports are expected outside Quickshell)"
+    else
+      bad "qmllint $rel assigns properties the type does not have: $(tr '\n' ' ' <<<"$unresolvable")"
     fi
   done
 elif command -v qmllint >/dev/null 2>&1; then
