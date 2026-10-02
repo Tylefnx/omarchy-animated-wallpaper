@@ -4,6 +4,8 @@ Animated video wallpaper for [Omarchy](https://omarchy.org/) using [mpvpaper](ht
 
 ![Omarchy plugin](https://img.shields.io/badge/omarchy-plugin-blue) ![Quickshell](https://img.shields.io/badge/quickshell-widget-green) ![Plug and play](https://img.shields.io/badge/install-plug%20%26%20play-brightgreen)
 
+![Animated Wallpaper panel](preview.png)
+
 ## Features
 
 - Play any video (MP4, WebM, MKV, GIF...) as your desktop wallpaper
