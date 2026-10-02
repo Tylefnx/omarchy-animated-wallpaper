@@ -176,7 +176,6 @@ Item {
                 source: visible ? root.previewUrl : ""
                 asynchronous: true
                 cache: false
-                loops: Animation.Infinite
                 fillMode: root.selectedLayout === "fill" ? Image.PreserveAspectCrop
                   : root.selectedLayout === "stretch" ? Image.Stretch
                   : Image.PreserveAspectFit
