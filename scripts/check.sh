@@ -365,8 +365,8 @@ EOF
       start_rc=$?
       if ((start_rc != 0)) &&
         grep -q "could not start the wallpaper on $monitor" <<<"$start_out" &&
-        grep -q "  $monitor: the assigned video is missing or unreadable" <<<"$start_out" &&
-        grep -q 'hint: Pick a new video' <<<"$start_out"; then
+        grep -q "  $monitor: the assigned wallpaper is missing or unreadable" <<<"$start_out" &&
+        grep -q 'hint: choose a new image or video for this monitor' <<<"$start_out"; then
         ok "a broken assignment reports the monitor, the reason and the fix"
       else
         bad "broken assignment report → rc=$start_rc $(printf '%s' "$start_out" | tr '\n' ' ')"
