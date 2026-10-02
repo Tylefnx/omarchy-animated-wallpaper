@@ -80,7 +80,7 @@ plugin's own folder and refuses anything else — a folder without
 Prefer doing it by hand?
 
 ```bash
-omarchy plugin add https://github.com/Tylefnx/omarchy-animated-wallpaper.git --enable
+omarchy plugin add https://github.com/r4venw4rd/omarchy-animated-wallpaper.git --enable
 omarchy hook install post-boot ~/.config/omarchy/plugins/r4venward.wallpaper-video/scripts/wallpaper-video-start
 ```
 

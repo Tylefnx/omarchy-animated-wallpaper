@@ -15,7 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-REPO_URL="https://github.com/Tylefnx/omarchy-animated-wallpaper.git"
+REPO_URL="https://github.com/r4venw4rd/omarchy-animated-wallpaper.git"
 HOOK_TYPE="post-boot"
 HOOK_NAME="wallpaper-video-start"
 HOOK_SCRIPT="scripts/$HOOK_NAME"
